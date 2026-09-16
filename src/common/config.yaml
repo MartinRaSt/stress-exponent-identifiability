@@ -1,0 +1,835 @@
+# Project: Sammon mapping revisited - adaptive weighting, a scalable solver
+#          and a temporal extension (alpha-Sammon)
+# Authors: Martin Radvansky <martin.radvansky@vsb.cz>
+#          Martin Radvansky, Jr. <martin.radvansky1@vsb.cz>
+# Affiliation: Department of Computer Science, Faculty of Electrical Engineering
+#              and Computer Science, VSB - Technical University of Ostrava
+# License: see the LICENSE file in the repository root
+#
+# Central configuration for the whole project. No magic numbers in the code -
+# all parameters (seed, sample counts, method hyperparameters, paths) belong here.
+
+project:
+  name: "sammon-revisited"
+  seed: 42
+
+paths:
+  # all paths are relative to the project root (see common/config.py:get_project_root)
+  src_dir: "src"
+  data_dir: "src/data"
+  openml_cache_dir: "src/data/openml_cache"
+  uci_direct_cache_dir: "src/data/uci_direct"
+  graphs_cache_dir: "src/data/graphs"
+  temporal_cache_dir: "src/data/temporal"
+  manifest_file: "src/data/manifest.json"
+  results_dir: "results"
+  results_data_dir: "results/data"
+  results_tables_dir: "results/tables"
+  results_figures_dir: "results/figures"
+  results_logs_dir: "results/logs"
+  # generated number macros for the article (export_numbers.py) - FULL run ONLY;
+  # smoke/quick write numbers.tex to results/tables/<mode>/ (get_generated_dir)
+  article_generated_dir: "clanek/generated"
+  embeddings_dir: "results/data/embeddings"
+
+parallel:
+  # Number of parallel processes. Deliberately NOT null/cpu_count-1 as default:
+  # several methods (umap, pacmap, trimap) JIT-compile code via numba/LLVM on
+  # import, and tensorflow is imported at the same time (keras backend for
+  # pacmap); on a machine with many cores (>16) running dozens of such
+  # processes concurrently exhausts memory and crashes with "LLVM ERROR: out
+  # of memory" (confirmed).
+  #
+  # 2026-09-10: the original n_workers=4 only loaded the CPU to ~50% (each
+  # worker used ~1.5 OpenBLAS threads inside numpy, i.e. 4x1.5=6 of 32
+  # logical processors). The machine is an AMD Ryzen 9 5950X (16 cores/32
+  # threads, 128 GB RAM); the author allows using at most 20 logical
+  # processors so the system stays usable. 16 workers x 1 BLAS thread (see
+  # blas_threads_per_worker below) = 16 of 32 logical processors (under the
+  # limit of 20), uses the CPU better than the original 4x1.5=6, and keeps a
+  # margin against "LLVM ERROR: out of memory".
+  # 2026-09-13 (author): 16 workers loaded the CPU to 100% and overheated it
+  # (hard reset during E7). Reduced to 8 workers x 1 BLAS thread.
+  # 2026-09-14 (author): 8 workers was unnecessarily conservative, the
+  # machine stayed underloaded and cool - raised to 12 as a compromise
+  # between 8 (safe but slow) and 16 (overheated, hard reset 2026-09-13).
+  # 12 workers x 1 BLAS thread = 12 of 32 logical processors, under the
+  # author's original limit (20).
+  n_workers: 12
+  # Number of BLAS threads (OpenBLAS/MKL) per worker process in
+  # ProcessPoolExecutor - see src/common/parallel.py::_worker_initializer
+  # (sets env vars before numpy is imported inside the worker, plus
+  # threadpoolctl.threadpool_limits as a second layer of safety) and
+  # src/run_exp*.bat (sets env vars for the case of running without
+  # workers, e.g. the main process before a fork). n_workers x
+  # blas_threads_per_worker = 16 x 1 = 16 <= the author's limit (20 logical
+  # processors).
+  blas_threads_per_worker: 1
+  # Number of BLAS threads for SEQUENTIAL parts (sequential=True in
+  # run_experiment_grid, e.g. E2 part (b), scaling to large n, where a
+  # single run is already expensive in memory/time and running several such
+  # runs concurrently would not make sense) - more cores are used per run
+  # instead of more concurrent runs, see
+  # src/experiments/exp_common.py::run_experiment_grid.
+  blas_threads_sequential: 8
+  # 2026-09-13 (documentation/2026-09-13_hardening_behu.md): running log with
+  # ETA in src/experiments/exp_common.py::_consume_results - an INFO line
+  # after each completed run, if the total number of runs N <=
+  # progress_log_every_below; for larger N only every progress_log_every-th
+  # run (+ always the first and last), so the log of thousands of small runs
+  # (E1: ~960 tasks) is not huge. Reason: the full E3 run on 2026-09-13 ran
+  # for 4 h without a single line from the workers (just the tqdm bar).
+  progress_log_every_below: 300
+  progress_log_every: 25
+  # 2026-09-16: period (s) at which a worker process checks whether the main
+  # process is still alive - see src/common/parallel.py::_parent_watchdog. On
+  # a hard kill of the main process (Task Manager, Stop-Process, crash), the
+  # workers on Windows would otherwise wait forever and hold the CPU
+  # (confirmed on E4 2026-09-16: 12 orphaned python.exe processes). The value
+  # is a compromise: short enough for the CPU to free up promptly, long
+  # enough that the check costs nothing.
+  orphan_poll_sec: 5.0
+
+progress:
+  mininterval_sec: 0.5
+  ncols: 100
+
+download:
+  timeout_sec: 20
+  user_agent: "Mozilla/5.0 (compatible; SammonResearch/1.0; +martinradvansky@gmail.com)"
+  retries: 3
+
+datasets:
+  subsample:
+    n_max: 2000
+    random_state: 42
+    stratify_if_labels: true
+
+  # Z-score standardization (per-column StandardScaler) after loading a
+  # dataset, applied centrally in src/datasets/registry.py::load_dataset.
+  # Tabular data with heterogeneous units (e.g. wine: proline ~1000 vs. the
+  # rest ~1) would otherwise be dominated by a few variables, making DR
+  # method comparison meaningless (see
+  # documentation/2026-09-11_kontrola_vysledku_plnych_behu.md section 3.4).
+  # Image/already-normalized and synthetic data are NOT standardized - the
+  # list here is an explicit "allow-list"; no dataset is standardized
+  # implicitly.
+  standardize:
+    - iris
+    - wine
+    - breast_cancer
+    - glass
+    - ionosphere
+    - seeds
+    - yeast
+    - vehicle
+    - segment
+    - satimage
+    - letter
+    - spambase
+    # Q1 step 2 (reserse/2026-09-14_specifikace_rozsireni_q1.md, A.4 item 4) -
+    # standardize: heterogeneous units/scales across features.
+    - shuttle
+    - abalone
+    - page_blocks
+    - airfoil
+    - banknote
+    - mfeat_morphological
+    - phoneme
+    - dry_bean
+    - ccpp
+    # Do NOT standardize (see the "distance" column in the A.3.1/A.3.2
+    # specification): wall_robot (all features in meters), hill_valley (a
+    # single curve, same unit), all synthetic datasets above.
+
+  synthetic:
+    swiss_roll:
+      n_samples: 1000
+      noise: 0.05
+      random_state: 42
+    s_curve:
+      n_samples: 1000
+      noise: 0.05
+      random_state: 42
+    sphere:
+      n_samples: 1000
+      noise: 0.0
+      random_state: 42
+    severed_sphere:
+      n_samples: 1000
+      noise: 0.0
+      cap_polar_angle: 0.6
+      random_state: 42
+    helix:
+      n_samples: 1000
+      noise: 0.05
+      n_turns: 4
+      random_state: 42
+    torus:
+      n_samples: 1000
+      noise: 0.02
+      r_tube: 0.3
+      r_center: 1.0
+      random_state: 42
+    two_moons:
+      n_samples: 1000
+      noise: 0.08
+      random_state: 42
+    gaussian_clusters:
+      n_samples: 1000
+      n_clusters: 6
+      n_features: 10
+      cluster_std: 1.5
+      random_state: 42
+    hierarchical_clusters:
+      n_samples: 1000
+      n_top_clusters: 4
+      n_sub_clusters: 3
+      n_features: 10
+      top_std: 5.0
+      sub_std: 0.8
+      random_state: 42
+
+    # Q1 step 2 (reserse/2026-09-14_specifikace_rozsireni_q1.md, A.3.3) - 6
+    # new synthetic datasets, guaranteed regime L (low rho_NN). n_bands=10
+    # (y = index of 10 equal-width bands of the manifold parameter, as for
+    # the existing manifolds above). random_state=42 everywhere (determinism).
+    swiss_roll_hole:
+      n_samples: 1500
+      t_min: 4.71238898038469    # 1.5*pi
+      t_max: 14.137166941154069  # 4.5*pi
+      h_max: 21.0
+      hole_t_min: 7.853981633974483   # 2.5*pi
+      hole_t_max: 10.053096491487338  # 3.2*pi
+      hole_h_min: 7.0
+      hole_h_max: 14.0
+      noise: 0.05
+      n_bands: 10
+      random_state: 42
+    gaussian_clusters_separated:
+      n_clusters: 10
+      n_features: 10
+      center_std: 10.0
+      min_center_dist: 15.0
+      cluster_std: 0.5
+      n_per_cluster: 200
+      max_attempts: 10000
+      random_state: 42
+    mobius_strip:
+      n_samples: 1500
+      noise: 0.02
+      n_bands: 10
+      random_state: 42
+    klein_bottle_4d:
+      n_samples: 1500
+      a: 2.0
+      b: 1.0
+      noise: 0.02
+      n_bands: 10
+      random_state: 42
+    twin_peaks:
+      n_samples: 1500
+      noise: 0.02
+      n_bands: 10
+      random_state: 42
+    trefoil_knot:
+      n_samples: 1000
+      noise: 0.05
+      n_bands: 10
+      random_state: 42
+
+    # Addendum 2026-09-14 (reserse/2026-09-14_specifikace_rozsireni_q1.md,
+    # "Addendum 2026-09-14: N>=26") - 2 additional synthetic datasets of
+    # regime L, with different curvature/topology than the 6 above (rationale
+    # in the src/datasets/synthetic.py docstring before
+    # load_hyperbolic_paraboloid).
+    hyperbolic_paraboloid:
+      n_samples: 1500
+      curvature: 1.5
+      embed_amplitude: 0.3
+      noise: 0.02
+      n_bands: 10
+      random_state: 42
+    anisotropic_ellipsoid:
+      n_samples: 1500
+      semi_axis_a: 1.0
+      semi_axis_b: 5.0
+      semi_axis_c: 25.0
+      embed_amplitude: 0.5
+      noise: 0.02
+      n_bands: 10
+      random_state: 42
+
+  openml:
+    fetch_random_state: 42
+    # OpenML names/ids used in sklearn.datasets.fetch_openml
+    sets:
+      mnist_784: {name: "mnist_784", version: 1}
+      fashion_mnist: {name: "Fashion-MNIST", version: 1}
+      coil20: {data_id: 46783}
+      optdigits: {name: "optdigits", version: 1}
+      pendigits: {name: "pendigits", version: 1}
+      satimage: {name: "satimage", version: 1}
+      letter: {name: "letter", version: 1}
+      spambase: {name: "spambase", version: 1}
+      har: {name: "har", version: 1}
+      isolet: {name: "isolet", version: 1}
+      cnae9: {name: "cnae-9", version: 1}
+      usps: {name: "usps", version: 2}
+      glass: {name: "glass", version: 1}
+      ionosphere: {name: "ionosphere", version: 1}
+      seeds: {name: "seeds", version: 1}
+      yeast: {name: "yeast", version: 1}
+      vehicle: {name: "vehicle", version: 1}
+      segment: {name: "segment", version: 1}
+      # Q1 step 2 (reserse/2026-09-14_specifikace_rozsireni_q1.md, A.3.1) -
+      # hold-out candidates for regime L, verified against the OpenML API on
+      # 2026-09-14 (see "Sources" in the specification; data_id/version
+      # exactly as verified).
+      shuttle: {data_id: 40685}
+      abalone: {data_id: 183}
+      page_blocks: {data_id: 30}
+      airfoil: {data_id: 43919}
+      banknote: {data_id: 1462}
+      mfeat_morphological: {data_id: 18}
+      wall_robot: {data_id: 1497}
+      hill_valley: {data_id: 1479}
+      phoneme: {data_id: 1489}
+
+  # Q1 step 2 reserve datasets (A.3.2) - direct zip download from the UCI
+  # archive (xlsx/arff inside, OUTSIDE fetch_openml - the OpenML lookup for
+  # dry_bean failed with HTTP 412; ccpp is not verified in
+  # `datasets.openml.sets` on OpenML). sha256 is written to
+  # src/data/manifest.json on first download
+  # (src/datasets/download.py::download_file).
+  uci_direct:
+    dry_bean:
+      archive_url: "https://archive.ics.uci.edu/static/public/602/dry+bean+dataset.zip"
+      member: "DryBeanDataset/Dry_Bean_Dataset.arff"
+    ccpp:
+      archive_url: "https://archive.ics.uci.edu/static/public/294/combined+cycle+power+plant.zip"
+      member: "CCPP/Folds5x2_pp.xlsx"
+      sheet_name: "Sheet1"
+
+  graphs:
+    netdata_base_url: "https://websites.umich.edu/~mejn/netdata/"
+    netdata_sets: ["dolphins", "football", "polbooks"]
+    email_eu_core:
+      edges_url: "https://snap.stanford.edu/data/email-Eu-core.txt.gz"
+      labels_url: "https://snap.stanford.edu/data/email-Eu-core-department-labels.txt.gz"
+    # K8 (documentation/2026-09-12_plan_smeru_clanku.md): larger graphs for
+    # E3 (2k-11k nodes). Sources/licenses/citations verified by
+    # sci-researcher (R5, reserse/2026-09-12_r1_r6_podklady_smeru_ab.md) -
+    # detailed citations and TODO markers for uncertain DOIs are in the
+    # docstrings of the individual loaders in src/datasets/graphs.py.
+    louvain_seed: 42
+    cora:
+      archive_url: "https://linqs-data.soe.ucsc.edu/public/lbc/cora.tgz"
+    power_grid:
+      archive_url: "http://konect.cc/files/download.tsv.opsahl-powergrid.tar.bz2"
+    facebook_combined:
+      edges_url: "https://snap.stanford.edu/data/facebook_combined.txt.gz"
+    ca_grqc:
+      edges_url: "https://snap.stanford.edu/data/ca-GrQc.txt.gz"
+    pgp:
+      archive_url: "http://konect.cc/files/download.tsv.arenas-pgp.tar.bz2"
+
+  temporal:
+    primary_school:
+      page_url: "http://www.sociopatterns.org/datasets/primary-school-temporal-network-data/"
+      data_url: "http://www.sociopatterns.org/assets/data/primaryschool.csv.gz"
+      # file columns: t, i, j, Ci, Cj (time in seconds, node id, node id, class of node i, class of node j)
+      time_bin_sec: 1200
+    hospital:
+      page_url: "http://www.sociopatterns.org/datasets/hospital-ward-dynamic-contact-network/"
+      data_url: "https://sociopatterns.org/assets/data/hospital_lyon_contacts.dat.gz"
+      # file columns: t, i, j, Si, Sj (time in seconds, node id, node id, status of node i, status of node j:
+      # PAT=patient, MED=doctor, NUR=nurse, ADM=administration). Verified manually on 2026-09-11 (curl + urllib
+      # worked in this environment) - the direct link `.../assets/data/detailed_list_of_contacts_Hospital.dat_.gz`
+      # from the old STAV returns 404; the current URL was obtained from the page_url HTML page.
+      time_bin_sec: 3600
+    high_school:
+      page_url: "http://www.sociopatterns.org/datasets/high-school-contact-and-friendship-networks/"
+      data_url: "https://sociopatterns.org/assets/data/HighSchool2013_proximity_net.csv.gz"
+      # file columns: t, i, j, Ci, Cj (time in seconds, node id, node id, class of node i, class of node j).
+      # The downloaded file is named "High-School_data_2013.csv" inside the .gz (extracted during
+      # verification on 2026-09-11).
+      time_bin_sec: 3600
+    dblp_yearly:
+      # there is no single stable, directly downloadable URL with yearly DBLP
+      # snapshots, so the loader requires a local file - see the exception in
+      # src/datasets/temporal.py
+
+    # 2026-09-13 (K11, documentation/2026-09-13_e4_rozsireni_datasetu.md): 4
+    # additional temporal contact networks for E4 (3 -> 7 total), so the
+    # "lambda~1" conclusion does not rest on only 3 datasets. The file format
+    # of these four does NOT have node classes directly in the row (unlike
+    # primary_school/hospital/high_school above) - see
+    # src/datasets/temporal.py::_load_plain_tij_dataset. URLs verified by
+    # downloading them (curl, 2026-09-13).
+    invs13:
+      page_url: "https://www.sociopatterns.org/datasets/contacts-in-a-workplace/"
+      data_url: "https://www.sociopatterns.org/assets/data/workplace_InVS_tij.dat.zip"
+      metadata_url: "https://www.sociopatterns.org/assets/data/workplace_InVS_metadata.txt"
+      archive_kind: "zip"
+      # data file columns: t, i, j (WITHOUT classes in the row); class
+      # (department) is in a separate file metadata_url (columns: node,
+      # department). License: CC0 (Creative Commons Public Domain
+      # Dedication), cite Genois & Barrat, Network Science 3, 326 (2015).
+      time_bin_sec: 10800
+    sfhh:
+      page_url: "https://www.sociopatterns.org/datasets/sfhh-conference-data-set/"
+      data_url: "https://www.sociopatterns.org/assets/data/SFHH_tij.dat.gz"
+      archive_kind: "gz"
+      # columns: t, i, j (no classes, no public node metadata available -> y=None).
+      # License: CC0, cite Genois & Barrat, EPJ Data Science 7, 11 (2018).
+      time_bin_sec: 3600
+    ht09:
+      page_url: "https://www.sociopatterns.org/datasets/hypertext-2009-dynamic-contact-network/"
+      data_url: "https://www.sociopatterns.org/assets/data/ht2009_contact_list.dat.gz"
+      archive_kind: "gz"
+      # columns: t, i, j (no classes, no public node metadata available -> y=None).
+      # License: CC BY-NC-SA 3.0, cite Isella et al., J. Theoretical Biology 271, 166 (2011).
+      time_bin_sec: 3600
+    email_eu_core:
+      page_url: "https://snap.stanford.edu/data/email-Eu-core-temporal.html"
+      data_url: "https://snap.stanford.edu/data/email-Eu-core-temporal.txt.gz"
+      metadata_url: "https://snap.stanford.edu/data/email-Eu-core-department-labels.txt.gz"
+      # NON-SocioPatterns control dataset (SNAP): email communication at a
+      # research institution, 803 days, the file columns are IN A DIFFERENT
+      # ORDER `i j t` (sender, receiver, time) - see the loader
+      # load_email_eu_core_temporal. The directed graph (sender->receiver) is
+      # collapsed into an undirected contact graph for consistency with the
+      # pipeline. Node classes (42 departments) are in a separate file
+      # metadata_url. License: SNAP, free for research/teaching purposes,
+      # cite Paranjape, Benson & Leskovec, "Motifs in Temporal Networks",
+      # WSDM 2017.
+      time_bin_sec: 1814400
+
+methods:
+  common:
+    n_components: 2
+  pca: {}
+  mds:
+    metric_mds: true
+    init: "random"
+    max_iter: 300
+    eps: 1.0e-6
+    n_init: 4
+  sammon_classic:
+    # reference implementation of Sammon 1969, pseudo-Newton
+    max_iter: 300
+    alpha: 0.3
+    tol: 1.0e-6
+    eps: 1.0e-9
+    # step-halving (2026-09-11): if the stress increases after a step, the
+    # step is reverted and alpha is halved (up to max_halvings times per
+    # iteration) - without this, pseudo-Newton diverges on high-dimensional
+    # data (E1: cnae9, isolet, har, ...)
+    step_halving: true
+    max_halvings: 10
+  isomap:
+    n_neighbors: 10
+  lle:
+    n_neighbors: 10
+    method: "standard"
+  tsne:
+    perplexity: 30
+    learning_rate: "auto"
+    max_iter: 1000
+    init: "pca"
+  # a "fair" baseline against sammon_alpha_auto (grid search + auc_rnx on a
+  # subsample, see src/methods/hyperparam_selection.py and
+  # documentation/2026-09-11_kontrola_vysledku_plnych_behu.md section 3.5) -
+  # other hyperparameters (learning_rate, max_iter, init) match 'tsne'
+  tsne_auto:
+    perplexity_grid: [5, 15, 30, 50]
+    learning_rate: "auto"
+    max_iter: 1000
+    init: "pca"
+  umap:
+    n_neighbors: 15
+    min_dist: 0.1
+    metric: "euclidean"
+  # a "fair" baseline against sammon_alpha_auto (grid search + auc_rnx on a
+  # subsample, see src/methods/hyperparam_selection.py); min_dist/metric are
+  # kept at the default values from 'umap' (grid only over n_neighbors, per
+  # the requirement "keep min_dist at default")
+  umap_auto:
+    n_neighbors_grid: [5, 15, 30, 50]
+    min_dist: 0.1
+    metric: "euclidean"
+  # K5 (documentation/2026-09-12_plan_smeru_clanku.md): DensMAP (Narayan,
+  # Berger, Cho 2021, DOI 10.1038/s41587-020-00801-7) - umap.UMAP(densmap=True),
+  # hyperparameters match 'umap' (see src/methods/densmap.py)
+  densmap:
+    n_neighbors: 15
+    min_dist: 0.1
+    metric: "euclidean"
+  # K5: PHATE (Moon et al. 2019, DOI 10.1038/s41587-019-0336-3), diffusion
+  # potential distance (see src/methods/phate_.py). knn/decay are kept at
+  # the default values of the phate library (2.0.0).
+  phate:
+    knn: 5
+    decay: 40
+    n_jobs: 1
+    verbose: 0
+  pacmap:
+    n_neighbors: 10
+  trimap:
+    n_inliers: 10
+    n_outliers: 5
+    n_random: 5
+  kamada_kawai: {}
+  spring:
+    iterations: 50
+  # K8 (documentation/2026-09-12_plan_smeru_clanku.md): spectral layout
+  # (networkx.spectral_layout - Laplacian eigenvectors), src/methods/spectral.py
+  spectral: {}
+  # adapters for the proposed alpha-Sammon method
+  # (src/sammon/estimator.py::SammonAlpha), see the registration in
+  # src/methods/registry.py::_import_all_adapters and
+  # src/methods/sammon_alpha.py. Solver hyperparameters are in the `sammon:`
+  # section.
+  sammon_alpha_smacof: {alpha: 1.0, solver: "smacof", device: "cpu"}
+  sammon_alpha0_smacof: {alpha: 0.0, solver: "smacof", device: "cpu"}
+  sammon_alpha2_smacof: {alpha: 2.0, solver: "smacof", device: "cpu"}
+  sammon_alpha_auto: {alpha: "auto", solver: "smacof", device: "cpu"}
+  sammon_multiscale: {alpha: "multiscale", solver: "smacof", device: "cpu"}
+  sammon_sgd_stab: {alpha: 1.0, solver: "sgd", device: "cpu"}
+  sammon_sgd_naive: {alpha: 1.0, solver: "sgd_naive", device: "cpu"}
+  sammon_sparse_smacof: {alpha: 1.0, solver: "sparse_smacof", device: "cpu"}
+  sammon_newton: {alpha: 1.0, solver: "newton", device: "cpu"}
+  # K7 (documentation/2026-09-12_plan_smeru_clanku.md): predicted alpha
+  # (src/methods/sammon_alpha_pred.py, src/sammon/alpha_predict.py) - alpha
+  # is not a fixed number here; it is computed at run time from nn_ratio_k1
+  # via the rule in results/data/alpha_pred_rule.json
+  # (src/experiments/fit_alpha_rule.py).
+  sammon_alpha_pred: {solver: "smacof", device: "cpu"}
+
+metrics:
+  neighborhood_k: [7, 20]
+  shepard_sample_pairs: 5000
+  random_state: 42
+  # 2026-09-12 (documentation/2026-09-12_gpu_pcg_a_metriky_velkych_grafu.md,
+  # item 5): raised from 10000 to 12000, so that 'pgp' (E3, n_lcc=10680) does
+  # not get auc_rnx (E3's main global metric) as NaN. Measured directly on
+  # synthetic n=10680 (random data, only timing/memory measurement, not a
+  # result): the full `evaluate(extended=True)` with coranking including all
+  # other metrics (trustworthiness/continuity/_neighbor_ranks O(n^2 log n),
+  # cluster_geometry) took 40.8 s, peak memory ~7.3 GB (128 GB RAM on the
+  # machine) - well under the ~3 min budget, so option (a) "raise the limit"
+  # was chosen over (b) "subsample" (see the measurement note in the
+  # document above).
+  coranking_max_n: 12000
+  eps: 1.0e-9
+
+# Parameters for figure generation (src/figures/), see
+# src/figures/fig_common.py for shared, data-independent constants (palette,
+# column widths).
+figures:
+  # DPI of rasterized layers (graph edges as LineCollection, dense point
+  # clouds) in vector PDFs - project rule: dense layers rasterized at
+  # 300 dpi, points/text vector (src/figures/fig_common.py::save_figure).
+  raster_dpi: 300
+  gallery_methods:
+    # the figure (PDF) always plots ALL points of each embedding (rasterized,
+    # visually indistinguishable from a subsample) - only the accompanying
+    # CSV (results/figures/fig_gallery_methods.csv) is trimmed, for file
+    # size, to at most this many points per panel (32 datasets x 16 methods
+    # x up to n_max=5000 points would otherwise give tens of MB, see
+    # documentation/2026-09-11_kontrola_vysledku_plnych_behu.md section 6),
+    # deterministic seed.
+    csv_max_points_per_panel: 500
+    csv_subsample_seed: 42
+
+experiments:
+  exp0_smoke:
+    datasets: ["iris", "swiss_roll", "karate"]
+    seeds: [0, 1]
+    n_components: 2
+    swiss_roll_n_samples: 500
+  exp_sammon_demo:
+    datasets: ["iris", "swiss_roll", "digits", "karate"]
+    swiss_roll_n_samples: 1000
+    seed: 0
+    n_components: 2
+    alpha: 1.0
+    max_iter: 150
+    tol: 1.0e-4
+    solvers: ["newton", "smacof", "sgd_naive", "sgd_stab", "sparse_smacof"]
+    devices: ["cpu", "cuda"]
+    # solvers that have a GPU implementation
+    # (src/sammon/solvers/sgd.py::sgd_solve_gpu); the others (newton, smacof,
+    # sparse_smacof) run on CPU only - device='cuda' is SKIPPED for them (no
+    # GPU time is fabricated for a non-existent implementation)
+    gpu_capable_solvers: ["sgd_naive", "sgd_stab"]
+
+# Parameters of the proposed alpha-Sammon method (src/sammon/), see
+# reserse/2026-09-09_specifikace_metody.md. No magic numbers in the code -
+# all hyperparameter defaults belong here.
+sammon:
+  eps_num: 1.0e-9         # numerical stabilization of d_ij (section 1.3)
+  eps_D:
+    k: 5                  # k for kNN when estimating eps_D (section 3.3a)
+    q: 0.1                # quantile of the kNN distance distribution (section 3.3a)
+  weights:
+    default_alpha: 1.0    # alpha=1 corresponds to classic Sammon (section 1.1)
+
+  alpha_grid: [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
+  multiscale_alphas: [0.0, 1.0, 2.0]
+  multiscale_C: 1.0        # constant C in the c_k normalization (section 5.2)
+
+  init:
+    default: "pca"
+    random_scale: 0.1      # scale for init_random (multiple of the mean distance)
+    # 2026-09-13 (documentation/2026-09-13_hardening_behu.md):
+    # init_classical_mds computes, for n above this threshold, the p largest
+    # eigenpairs of the doubly-centered matrix B iteratively
+    # (scipy.sparse.linalg.eigsh over a LinearOperator, matvec O(n^2),
+    # deterministic v0 from the seed) instead of full numpy.linalg.eigh
+    # O(n^3): for pgp n=10680 in an E3 worker with 1 BLAS thread, ~4-5 min
+    # eigh vs. ~3 s eigsh (results/data/quick/init_probe.csv). Below the
+    # threshold, full eigh is unchanged (results on small datasets do not
+    # change).
+    classical_mds_iterative_min_n: 3000
+
+  newton:
+    mf: 0.3                 # magic factor (Sammon 1969)
+    max_iter: 300
+    tol: 1.0e-6
+    step_halving: true      # if stress increases after a step, revert the step and halve mf (see
+                             # documentation/2026-09-11_kontrola_vysledku_plnych_behu.md section 3.6)
+    max_halvings: 10        # max. number of step halvings within one iteration
+
+  smacof:
+    max_iter: 300
+    tol: 1.0e-4
+    tol_small_n: 1.0e-6
+    small_n_threshold: 500        # below this threshold a finer tol is used
+    dense_pinv_threshold: 5000    # up to this n, V^+ (pinv) is precomputed, otherwise CG
+    cg_max_iter: 500
+    cg_tol: 1.0e-6
+    reg_rho: 1.0e-8               # regularization V + rho/n * 11^T for CG
+
+  sgd:
+    epochs: 100
+    mu_max: 0.5                  # clipping (stabilized variant)
+    pairs_per_node: 60           # C - number of sampled pairs per node per epoch
+    eps_anneal: 0.01             # epsilon for eta_min = eps/w_max
+    k_eps: 5
+    q_eps: 0.1
+    eps_num: 1.0e-9
+    mu_max_grid: [0.3, 0.5, 0.7, 1.0]
+    pairs_per_node_grid: [30, 60, 100]
+    eps_anneal_grid: [0.001, 0.01, 0.1]
+    # how many epochs between stress records in the history (GPU: each epoch
+    # requires transferring Y to the CPU + an O(n^2) stress recomputation,
+    # which dominates the time on GPU - see sections 12.2/12.5; the last
+    # epoch is always logged)
+    log_every: 10
+
+  sparse:
+    n_pivots: 100
+    k_neighbors: 10
+    exact_knn_threshold: 20000     # below this threshold exact kNN (sklearn), otherwise pynndescent
+    n_pivots_grid: [50, 100, 200]
+    k_neighbors_grid: [5, 10, 15, 30]
+
+  alpha_selection:
+    n_val: 2000
+    metric: "auc_rnx"
+    seed: 42
+
+  temporal:
+    lambda_grid: [0.0, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0]
+    default_lambda: 0.1
+    max_iter: 300
+    tol: 1.0e-4
+    solver: "smacof"          # "smacof" (section 6.2) or "sgd" (section 6.3, anchor step)
+    gamma_mode: "eta_t"       # anchor-step gamma_t in SGD: "eta_t" (shared annealing) or "fixed"
+    gamma_fixed: 0.1          # used only when gamma_mode="fixed"
+
+    # 2026-09-14: external "dynamic t-SNE" baseline for E4 (Rauber, Falcao,
+    # Telea 2016, DOI 10.2312/eurovisshort.20161164, key rauber2016dynamic
+    # in clanek/references.bib) - own numpy implementation
+    # src/sammon/dynamic_tsne.py::DynamicTSNE. The P matrix is computed from
+    # the SAME input distance matrix D_t (shortest-path, see
+    # exp4_temporal.py _load_snapshots) that our TemporalSammon (SMACOF/SGD)
+    # uses. perplexity and max_iter are in methods.tsne (shared with E1
+    # 't-SNE', NOT duplicated here). The lambda_dt grid is in
+    # config_experiments.yaml (exp4_temporal.dtsne.lambdas), normalized as
+    # lambda_dt/(2*N_t) in the objective function (Rauber 2016, the section
+    # describing the temporal penalty).
+    dtsne:
+      early_exaggeration: 12.0        # standard t-SNE early exaggeration factor (van der Maaten & Hinton 2008)
+      # number of initial iterations with exaggeration - ONLY for the first
+      # snapshot (t=0, no anchors); later snapshots are warm-started from
+      # Y^(t-1), and exaggeration would disrupt the warm start
+      early_exaggeration_iter: 250
+      momentum_init: 0.5
+      momentum_final: 0.8
+      momentum_switch_iter: 250
+      learning_rate_min: 50.0         # sklearn 'auto' formula: max(n/(early_exaggeration*4), learning_rate_min)
+      min_gain: 0.01                  # adaptive gain, van der Maaten & Hinton 2008 eq. 4
+      eps_num: 1.0e-12                # numerical stabilization of distances/probabilities/division
+      perplexity_tol: 1.0e-5          # tolerance of the binary search for sigma_i (entropy) for the target perplexity
+      perplexity_max_iter: 50
+      # initialization of new nodes (K14 scheme matches src/sammon/temporal.py,
+      # which is however NOT modified - developed concurrently by another
+      # agent, hence an own copy of the logic here with shared constants
+      # from the config)
+      new_node_k_near: 5              # number of nearest continuing nodes for the centroid-init of a new node
+      new_node_jitter_scale: 1.0e-3   # multiple of the mean D_t distance for jitter around the neighbor centroid
+      new_node_random_scale: 0.1      # multiple of the mean D_t distance for random init without continuing neighbors
+
+  device:
+    default: "auto"                # "cpu" | "cuda" | "auto"
+    memory_budget_bytes: 6.0e9      # VRAM budget for the dense representation (out of an 8 GB RTX 3070 Ti)
+    bytes_per_element: 4            # float32 on GPU
+    n_resident_dense_matrices: 5    # D, W, d(Y), B(Y), an auxiliary matrix simultaneously in memory
+    dtype_cpu: "float64"
+    dtype_gpu: "float32"
+
+  # GPU dense SMACOF and pseudo-Newton (specification section 12.1).
+  #
+  # SMACOF (src/sammon/solvers/smacof.py::smacof_solve_gpu) - reworked on
+  # 2026-09-13 (documentation/2026-09-13_gpu_pametova_optimalizace.md): the
+  # mode is chosen BY BYTES n^2*itemsize (dtype-aware; float64 = 8 B/element),
+  # not by a fixed n, and the RHS B(Y)Y + sigma are ALWAYS computed in row
+  # blocks (tile_rows x n) with preallocated buffers - no n x n temporary
+  # tensor is created within an iteration (the original code allocated ~8
+  # n x n tensors per iteration -> for pgp n=10680 float64, a peak of 8-10 GB
+  # per process, WDDM paging, > 6 min per iteration). Modes
+  # (history['solver_path']):
+  #   gpu_guttman    : W constant off the diagonal (alpha=0) and lam=0 ->
+  #                    closed form Y = centr(B(Y)Y)/(c n), no CG/factorization;
+  #                    only D on GPU (1 n^2 bytes).
+  #   gpu_dense_pinv : 3*n^2*itemsize <= pinv_max_bytes -> Cholesky factor
+  #                    V+11^T/n = L L^T once (without materializing the
+  #                    inverse), then 2 triangular solves per iteration;
+  #                    D, W, L resident.
+  #   gpu_cg         : 2*n^2*itemsize <= resident_max_bytes -> D, W on GPU, PCG.
+  #   gpu_tiled_cg   : otherwise -> D, W on CPU, row blocks streamed to GPU.
+  # Pseudo-Newton (newton_solve_gpu) additionally uses `tile_threshold`
+  # (fixed n).
+  gpu_dense:
+    # RTX 3070 Ti: 8.59e9 B total; dwm/Windows holds 0.7-2.4 GB; E3 large
+    # graphs run in 2 concurrent workers
+    # (exp3_graph_layout.large_graph_max_workers), each additionally using
+    # ~0.3 GB CUDA context + buffers (3 x tile_rows x n x itemsize, for
+    # n=10680 f64 = 0.26 GB). Budget per worker for n^2-sized tensors:
+    # (8.59 - 2.4 dwm - 2 x 0.6) / 2 = 2.5 GB.
+    # pinv_max_bytes: limit for 3*n^2*itemsize (D, W, L resident; the peak
+    # during the W+V+L factorization is also 3 n^2, D is loaded only after
+    # it). 2.5e9 -> pinv works up to n <= 10206 (f64) / 14433 (f32); pgp
+    # (n=10680 f64: 3 n^2 = 2.74 GB) therefore falls into gpu_cg (2 n^2 =
+    # 1.83 GB), which is safe with 2 workers (2 x (1.83+0.26+0.3) + 2.4 =
+    # 7.2 GB < 8.59 GB), whereas pinv would give 2 x (2.74+0.26+0.3) + 2.4 =
+    # 9.0 GB -> paging. Time for pgp: pinv ~62 ms/iter + 1.5 s factorization
+    # vs. CG ~0.1-0.2 s/iter (measured by the probe
+    # src/sammon/gpu_memory_probe.py, results/data/quick/gpu_memory_probe.csv) -
+    # both on the order of tens of seconds for the whole run; memory is the
+    # deciding factor.
+    pinv_max_bytes: 2.5e+9
+    # resident_max_bytes: limit for 2*n^2*itemsize (D+W on GPU; guttman
+    # holds only D, i.e. 1 n^2). 2.5e9 -> resident CG works up to n <= 12500
+    # (f64) / 17677 (f32); above that, streaming from CPU (gpu_tiled_cg,
+    # an order of magnitude slower - W is transferred on every CG matvec).
+    resident_max_bytes: 2.5e+9
+    # tolerance for detecting constant off-diagonal weights (alpha=0 -> W=1
+    # exactly, see weights.alpha_weights); a negative value disables the
+    # detection
+    const_w_rtol: 1.0e-12
+    # estimated overhead of the CUDA context + allocator per worker process
+    # (measured 2026-09-13, nvidia-smi vs. torch.cuda.memory_allocated:
+    # ~0.3 GB) - used in `estimate_gpu_peak_bytes` (VRAM preflight in
+    # exp3_graph_layout.main)
+    cuda_context_bytes: 3.0e+8
+    tile_threshold: 12000       # newton_solve_gpu ONLY: above this n, a tiled pass is used (for SMACOF see *_max_bytes)
+    tile_rows: 1024             # row block size for block-wise RHS/sigma and streaming (both SMACOF and Newton)
+    cg_max_iter: 500
+    cg_tol: 1.0e-6              # lower bound of the relative CG tolerance (the exact mode always uses it)
+    # Inexact majorization (2026-09-13): the relative CG tolerance in
+    # iteration k = clip(cg_tol_factor * relative decrease of sigma in the
+    # previous iteration, cg_tol, cg_tol_max); the first iteration uses
+    # cg_tol_max. SMACOF's monotonicity is preserved (CG starts from the
+    # current Y and every step decreases the quadratic majorant). The final
+    # stress matches the exact variant within `tol` (test
+    # tests/test_sammon_gpu.py::test_smacof_gpu_inexact_cg_matches_exact).
+    inexact_cg: true
+    cg_tol_factor: 0.1
+    cg_tol_max: 1.0e-3
+    # period of GPU->CPU synchronized checks (convergence/isfinite/degeneracy)
+    # in _torch_cg - each check is a sync; CG does at most cg_check_every-1
+    # extra iterations after reaching the tolerance
+    cg_check_every: 4
+    reg_rho: 1.0e-8
+    stress_blowup_factor: 10.0  # fail-loud (smacof_solve_gpu): RuntimeError if sigma after
+                                 # a Guttman step grows more than this factor relative to the
+                                 # previous iteration (see documentation/2026-09-11_opravy_resicu.md)
+    # 'float32' (faster, default) or 'float64' (more precise, see
+    # src.sammon.solvers.smacof.resolve_gpu_dtype - actually wired into the
+    # smacof_solve_gpu call in estimator.py for the first time on 2026-09-12;
+    # before that, this key was unused/"dead"). Measurements on 2026-09-12
+    # (documentation/2026-09-12_gpu_pcg_a_metriky_velkych_grafu.md) found
+    # that the CG mode (the range of "large" E3 graphs) is numerically
+    # UNSTABLE at float32 even for alpha=0 (a near-null "translation" mode of
+    # the Laplacian + reg_rho=1e-8 -> catastrophic cancellation of
+    # significant digits for large n) - use 'float64' for these cases (see
+    # the exp3_graph_layout.large_graph_gpu_dtype override). For smaller n
+    # (E1, guttman/pinv mode on small datasets), the default 'float32'
+    # remains accurate enough and faster - the global value here is NOT
+    # changed (only exp3 for large graphs uses a temporary override).
+    dtype: "float32"
+
+  # A probe of GPU memory/time for SMACOF at real scale (2026-09-13,
+  # src/sammon/gpu_memory_probe.py + src/run_gpu_memory_probe.bat): loads the
+  # cached graph distance matrix, builds W and the init exactly like the
+  # estimator (kind='distance' -> init_classical_mds), and times
+  # smacof_solve_gpu (float64) for the given (alpha, mode). Output:
+  # results/data/quick/gpu_memory_probe.csv.
+  gpu_memory_probe:
+    graph: "pgp"
+    distance: "resistance"
+    expected_n: 10680            # fail-loud check of the cache shape (pgp LCC)
+    n_components: 2
+    seed: 0
+    max_iter: 30
+    # default set of runs "alpha:mode:cg" (cg = exact|inexact|config)
+    runs: ["0:guttman:config", "1:pinv:config", "1:resident_cg:exact", "1:resident_cg:inexact"]
+
+  # Timing benchmark of CPU vs GPU dense SMACOF (section 12.5), see
+  # src/sammon/gpu_dense_timing.py + src/run_gpu_dense_timing.bat. A fixed
+  # number of iterations (tol=0.0 - disables stopping on stress decrease),
+  # NOT run to convergence - the goal is to compare CPU/GPU wall-clock time
+  # for the same number of steps, not the final embedding quality.
+  gpu_dense_timing:
+    n_values: [1000, 2000, 5000, 10000]
+    dataset: "gaussian_clusters"
+    seed: 0
+    alpha: 1.0
+    max_iter: 20
+    tol: 0.0
+    dense_pinv_threshold: 5000   # CPU (matches sammon.smacof.dense_pinv_threshold)
+    cg_max_iter: 100
+    cg_tol: 1.0e-4
+
+  estimator:
+    n_components: 2
+    max_iter: 300
+    tol: 1.0e-4
+    seed: 42
+
+  metrics_extended:
+    # Parameters of the extended metric set (extended=True),
+    # src/sammon/metrics.py, src/sammon/graph_metrics.py,
+    # src/sammon/temporal_metrics.py - see
+    # reserse/2026-09-09_pseudokod_a_metriky.md PART B.
+    n_dcor: 1000                  # subsample for distance correlation (Szekely 2007), O(n^2) otherwise infeasible
+    lcmc_k: 7                     # K for LCMC (row 11 of the metrics table)
+    jaccard_k: 7                  # K for kNN Jaccard preservation (row 13)
+    graph_crossings_exact_max_n: 200   # above this threshold the exact O(m^2) edge-crossing test is skipped (NaN)
+    # K2 (documentation/2026-09-12_plan_smeru_clanku.md): number of nearest
+    # classes for centroid_knn_preservation (src/sammon/cluster_geometry.py)
+    cluster_geometry_k: 3

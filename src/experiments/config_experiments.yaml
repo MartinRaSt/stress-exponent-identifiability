@@ -1,0 +1,1435 @@
+# Project: Sammon mapping revisited - adaptive weighting, a scalable solver
+#          and a temporal extension (alpha-Sammon)
+# Authors: Martin Radvansky <martin.radvansky@vsb.cz>
+#          Martin Radvansky, Jr. <martin.radvansky1@vsb.cz>
+# Affiliation: Department of Computer Science, Faculty of Electrical Engineering
+#              and Computer Science, VSB - Technical University of Ostrava
+# License: see the LICENSE file in the repository root
+#
+# Parameters of experiments E1-E5 (src/experiments/exp1..5*.py) and the
+# shared statistics (src/experiments/stats.py). Separated from
+# src/common/config.yaml (the `sammon:`/`methods:`/`datasets:` sections there
+# are maintained by a different agent working concurrently - this file does
+# NOT touch them; it is loaded by its own loader
+# src/experiments/config_experiments.py). No magic numbers in the experiment
+# code - everything belongs here. Every block may have a `quick:` sub-key,
+# which for --quick mode overrides same-named keys (see
+# resolve_experiment_config).
+
+# Q1 step 2 (reserse/2026-09-14_specifikace_rozsireni_q1.md, A.5 and A.9
+# item 4) - hold-out candidate datasets for regime L. The shared YAML anchor
+# &q1_holdout must be defined BEFORE its first use (YAML aliases only refer
+# backwards) - hence it is here, before exp1_dr_benchmark. Order =
+# pre-registered priority (A.3.1 real datasets 1-9, A.3.2 real reserves
+# 10-11 - R1 frey_faces OMITTED, HTTP 403 verified 2026-09-14, see the
+# src/datasets/uci_extra.py docstring - A.3.3 synthetic 12-17). This list is
+# NEVER added to exp1_dr_benchmark.datasets/exp6_alpha_curves.datasets (rule
+# fit, A.5) - only to the *_holdout keys below and
+# sammon_alpha_pred.holdout_datasets.
+# Addendum 2026-09-14 (reserse/2026-09-14_specifikace_rozsireni_q1.md,
+# "Addendum 2026-09-14: N>=26"): 2 additional synthetic candidates added
+# (priority 18-19, different curvature/topology than the existing 6, see
+# src/datasets/synthetic.py), so that N in regime L grows from the expected
+# 24 to >=26 (the Noether robustness requirement A.7). ADDED BEFORE any DR
+# result on the hold-out datasets (see the addendum below) - the selection
+# is based exclusively on the expected rho_NN, not on the quality of the
+# embedding.
+q1_holdout_datasets: &q1_holdout
+  - shuttle
+  - abalone
+  - page_blocks
+  - airfoil
+  - banknote
+  - mfeat_morphological
+  - wall_robot
+  - hill_valley
+  - phoneme
+  - dry_bean
+  - ccpp
+  - swiss_roll_hole
+  - gaussian_clusters_separated
+  - mobius_strip
+  - klein_bottle_4d
+  - twin_peaks
+  - trefoil_knot
+  - hyperbolic_paraboloid
+  - anisotropic_ellipsoid
+
+# Addendum 2026-09-14 (reserse/2026-09-14_specifikace_rozsireni_q1.md,
+# "Addendum 2026-09-14: change of pre-registration"): anchor for the
+# negative control datasets of regime L - ORIGINALLY only `phoneme`
+# (A.3.1 #9) was pre-registered, but it empirically fell into regime L
+# (rho_NN=0.070 < 0.1092), and thus stopped being a control. Replaced by TWO
+# datasets that empirically came out OUTSIDE regime L (mid_ratio):
+# `wall_robot` (rho_NN~0.117-0.133) and `dry_bean` (rho_NN in the same band)
+# - see screen_regime_candidates.csv and the addendum at the end of
+# reserse/2026-09-14_specifikace_rozsireni_q1.md. `designated_negative_controls`
+# (below) is an independent anchor for the sanity check in
+# exp1_holdout_confirmatory.py (F_A3) - `is_control` in `candidates` is only
+# a descriptive column of the output CSV; the F_A3 statistic already used
+# the EMPIRICALLY determined regime_frozen != 'low_ratio', not this list
+# (no change in F_A3 behavior, only visibility of the pre-registration).
+q1_negative_control_datasets: &q1_negative_controls
+  - wall_robot
+  - dry_bean
+
+exp1_dr_benchmark:
+  n_components: 2
+  n_max: 5000
+  # explicit override of n_max for specific datasets (specification section
+  # 13 recommends a subsample of 5000/10000 for MNIST/Fashion-MNIST - 5000
+  # here)
+  n_max_overrides:
+    mnist_784: 5000
+    fashion_mnist: 5000
+    # Q1 step 2 (A.4 item 5): a hard cap n_used<=2000 for ALL new hold-out
+    # candidates (same value for each, see specification A.3).
+    shuttle: 2000
+    abalone: 2000
+    page_blocks: 2000
+    airfoil: 2000
+    banknote: 2000
+    mfeat_morphological: 2000
+    wall_robot: 2000
+    hill_valley: 2000
+    phoneme: 2000
+    dry_bean: 2000
+    ccpp: 2000
+    swiss_roll_hole: 2000
+    gaussian_clusters_separated: 2000
+    mobius_strip: 2000
+    klein_bottle_4d: 2000
+    twin_peaks: 2000
+    trefoil_knot: 2000
+    # Addendum 2026-09-14 (N>=26)
+    hyperbolic_paraboloid: 2000
+    anisotropic_ellipsoid: 2000
+  # Q1 step 2 (A.5): hold-out datasets - NEVER in `datasets:` (anchor
+  # &exp1_datasets, shared with the exp6/fit_alpha_rule fit) - `--datasets
+  # all|core|holdout` (exp1_dr_benchmark.py) merges `datasets`+`datasets_holdout`
+  # only in the code (`core`=`datasets`, `holdout`=`datasets_holdout`,
+  # `all`=both).
+  datasets_holdout: *q1_holdout
+  # Q1 step 2 (A.8, A.9 item 4): split of 21 methods into Tier1
+  # (main_methods + tsne + umap, 15 methods - runs first) and Tier2 (the
+  # remaining 6, more expensive/secondary, `--tier tier2` runs only after
+  # Tier1). `--tier all` (default) uses all methods from `methods:`
+  # unchanged (original behavior, no impact on already existing production
+  # data for the 32 core datasets).
+  method_tiers:
+    tier1:
+      - sammon_alpha0_smacof
+      - sammon_alpha_auto
+      - sammon_alpha_smacof
+      - sammon_alpha2_smacof
+      - mds
+      - pca
+      - tsne_auto
+      - umap_auto
+      - pacmap
+      - trimap
+      - densmap
+      - phate
+      - sammon_alpha_pred
+      - tsne
+      - umap
+    tier2:
+      - sammon_classic
+      - isomap
+      - lle
+      - sammon_multiscale
+      - sammon_sgd_stab
+      - sammon_sparse_smacof
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  # all vector + synthetic datasets currently in the registry
+  # (src/datasets/registry.py) - YAML anchor &exp1_datasets - K6
+  # (exp6_alpha_curves.datasets) refers to it via *exp1_datasets (a
+  # reference, NOT a copy of the list, per the K6 requirement).
+  datasets: &exp1_datasets
+    - iris
+    - wine
+    - digits
+    - breast_cancer
+    - olivetti
+    - mnist_784
+    - fashion_mnist
+    - coil20
+    - optdigits
+    - pendigits
+    - satimage
+    - letter
+    - spambase
+    - har
+    - isolet
+    - cnae9
+    - usps
+    - glass
+    - ionosphere
+    - seeds
+    - yeast
+    - vehicle
+    - segment
+    - swiss_roll
+    - s_curve
+    - sphere
+    - severed_sphere
+    - helix
+    - torus
+    - two_moons
+    - gaussian_clusters
+    - hierarchical_clusters
+  methods:
+    - pca
+    - mds
+    - sammon_classic
+    - isomap
+    - lle
+    - tsne
+    - tsne_auto
+    - umap
+    - umap_auto
+    - pacmap
+    - trimap
+    - sammon_alpha0_smacof
+    - sammon_alpha_smacof
+    - sammon_alpha2_smacof
+    - sammon_alpha_auto
+    - sammon_multiscale
+    - sammon_sgd_stab
+    - sammon_sparse_smacof
+    # K5 (documentation/2026-09-12_plan_smeru_clanku.md): new neighborhood/
+    # diffusion baseline methods (src/methods/densmap.py, src/methods/phate_.py)
+    - densmap
+    - phate
+    # K7: predicted alpha (src/methods/sammon_alpha_pred.py) - requires
+    # fit_alpha_rule.py to have already run (results/data/alpha_pred_rule.json),
+    # otherwise it fails fail-loud (recorded as status=error, does not stop E1).
+    - sammon_alpha_pred
+  quick:
+    n_max: 300
+    seeds: [0, 1]
+    datasets: [iris, swiss_roll, digits]
+    methods: [pca, mds, sammon_classic, sammon_alpha_smacof, tsne, tsne_auto, umap_auto]
+  # smoke: E1 has 32 datasets x 16 methods = 512 combinations, which is too
+  # slow even with a small n_max (several OpenML datasets - mainly
+  # mnist_784/fashion_mnist - have a known slow ARFF parser in
+  # fetch_openml, and each worker also downloads/parses independently).
+  # Therefore smoke for E1 uses ASYMMETRIC coverage (see
+  # exp1_dr_benchmark.py:main): ALL methods only on full_coverage_datasets
+  # (small, already bundled/cached - exercises every method path), and on
+  # ALL OTHER datasets only reduced_methods (exercises the
+  # loader/subsample/metrics/saving for every dataset, but without a 16x
+  # multiplier on the time for each) - goal: the whole E1 smoke under 5
+  # minutes.
+  smoke:
+    n_max: 150
+    seeds: [0]
+    full_coverage_datasets: [iris, swiss_roll, digits]
+    full_coverage_n_max: 300
+    reduced_methods: [pca, sammon_alpha_smacof, sammon_alpha_auto, tsne_auto, umap_auto]
+
+exp2_solver_scaling:
+  n_components: 2
+  eps_num: 1.0e-9
+  max_iter: 150
+  tol: 1.0e-4
+  # (a) convergence of naive vs. stabilized SGD
+  convergence:
+    datasets: ["digits", "swiss_roll"]
+    digits_n: 1000
+    swiss_roll_n: 1000
+    seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+            20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+            40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+            60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+            80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99]
+    solvers: ["sgd_naive", "sgd_stab"]
+    alpha: 1.0
+    epochs: 100
+    # a run is "converged" if its final scale-invariant stress < converged_ratio * reference SMACOF stress
+    converged_ratio: 1.5
+    # for which seeds the full stress-vs-epoch curves are saved
+    # (exp2_convergence_curves.csv) - limited to a small subset so the file
+    # is not 100x larger (the converged fraction is computed from ALL
+    # seeds, only the curve logging is trimmed)
+    curve_log_seeds: [0, 1, 2, 3, 4]
+    quick:
+      seeds: [0, 1]
+      epochs: 20
+      digits_n: 200
+      swiss_roll_n: 200
+      curve_log_seeds: [0, 1]
+    # smoke: both solvers x both datasets, 1 seed, minimal number of epochs
+    smoke:
+      seeds: [0]
+      epochs: 5
+      digits_n: 100
+      swiss_roll_n: 100
+      curve_log_seeds: [0]
+  # (b) scaling with n
+  scaling:
+    n_grid: [500, 1000, 2000, 5000, 10000, 20000, 50000]
+    # above this n threshold, combinations requiring a dense (n x n) representation are skipped
+    max_n_dense: 20000
+    base_dataset: "gaussian_clusters"
+    solvers: ["smacof", "sgd_stab", "sparse_smacof", "sparse_sgd"]
+    devices: ["cpu", "cuda"]
+    # smacof now has a GPU dense implementation (V^+/CG/tiling, section 12.1,
+    # config sammon.gpu_dense) - sparse_smacof/sparse_sgd remain CPU-only
+    gpu_capable_solvers: ["sgd_stab", "smacof"]
+    alpha: 1.0
+    seeds: [0, 1, 2]
+    quick:
+      n_grid: [200, 500]
+      seeds: [0]
+      max_n_dense: 500
+    # smoke: all solvers x both devices (where GPU-capable) on a small n, 1 seed
+    smoke:
+      n_grid: [100, 200]
+      seeds: [0]
+      max_n_dense: 500
+  # (c) approximation error of the sparse model
+  sparse_approx:
+    datasets: ["swiss_roll", "digits"]
+    swiss_roll_n: 2000
+    digits_n: 2000
+    n_pivots_grid: [50, 100, 200]
+    k_neighbors_grid: [5, 10, 15, 30]
+    seeds: [0, 1, 2, 3, 4]
+    alpha: 1.0
+    quick:
+      n_pivots_grid: [50]
+      k_neighbors_grid: [10]
+      seeds: [0]
+      swiss_roll_n: 300
+      digits_n: 300
+    # smoke: the full pivot x k grid (12 combinations) x both datasets, only 1 seed
+    smoke:
+      seeds: [0]
+      swiss_roll_n: 150
+      digits_n: 150
+
+exp3_graph_layout:
+  n_components: 2
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  # K8 (documentation/2026-09-12_plan_smeru_clanku.md): 5 larger graphs
+  # (2k-11k nodes) added on top of the original 7 small ones - sources/
+  # licenses/citations see reserse/2026-09-12_r1_r6_podklady_smeru_ab.md R5,
+  # src/datasets/graphs.py (loaders for cora/power_grid/facebook_combined/ca_grqc/pgp).
+  datasets: ["karate", "les_miserables", "florentine", "dolphins", "football", "polbooks", "email_eu_core",
+             "cora", "power_grid", "facebook_combined", "ca_grqc", "pgp"]
+  distance_metrics: ["shortest_path", "resistance"]
+  # methods on a precomputed distance matrix (accepts in {"both","distance"})
+  distance_methods:
+    - mds
+    - sammon_classic
+    - sammon_alpha0_smacof
+    - sammon_alpha_smacof
+    - sammon_alpha2_smacof
+    - sammon_alpha_auto
+    - tsne
+    - tsne_auto
+    - umap
+    - umap_auto
+    # K7 (documentation/2026-09-12_plan_smeru_clanku.md): predicted alpha
+    # (src/methods/sammon_alpha_pred.py) - added at the end of the list
+    # (coordinated with K8, which extends this block concurrently).
+    - sammon_alpha_pred
+  # methods requiring the graph directly (independent of distance_metrics, computed once per dataset)
+  # K8: 'spectral' (networkx.spectral_layout, src/methods/spectral.py) added
+  # as a cheap baseline layout that also scales to pgp (n=10680) - just a
+  # sparse eigen-decomposition of the Laplacian, not O(n^3) like
+  # kamada_kawai/sammon_classic.
+  native_graph_methods: ["kamada_kawai", "spring", "spectral"]
+  # K8: above this many nodes (LCC size) a graph is considered "large" ->
+  # 'large_graph_seeds' is used instead of 'seeds' AND 'method_max_n' is checked.
+  large_graph_threshold_nodes: 2000
+  # K8: for large graphs only 3 seeds instead of 10 - each run on
+  # n~5000-10680 is expensive by itself (SMACOF O(n^2) per iteration,
+  # resistance distance O(n^3) one-off), analogous reasoning to the reduced
+  # number of seeds for E4 (temporal run) - see the exp4_temporal.seeds
+  # comment; also t-SNE/UMAP on n~10000 already take tens of seconds to
+  # minutes per run by themselves (see exp2_scaling_results.csv), so 10
+  # seeds x 5 large graphs x 2 distances x ~13 methods would add hours.
+  large_graph_seeds: [0, 1, 2]
+  # K8: methods that are O(n^2)-O(n^3) in the networkx/scipy pseudo-Newton
+  # implementation and infeasibly slow/memory-heavy on large graphs - above
+  # the given n, the row is written explicitly with status 'skipped_max_n'
+  # (NOT silently omitted, see exp3_graph_layout.py::_write_skip_row). mds
+  # SMACOF handles up to 5000 (dense_pinv_threshold in sammon.smacof),
+  # kamada_kawai and sammon_classic (pseudo-Newton, dense V^+ pinv) become
+  # infeasible in practice around 2000 nodes. tsne/tsne_auto/umap/umap_auto/
+  # sammon_alpha*_smacof handle up to 10680 (SMACOF has a sparse CG branch
+  # above dense_pinv_threshold; device='cuda' is recommended in
+  # methods.sammon_alpha*_smacof for a full run - SMACOF on GPU is roughly
+  # 12-29x faster than CPU at n=20000, see
+  # results/data/exp2_scaling_results.csv - changing device is the
+  # responsibility of the maintainer of the 'methods:' section in
+  # common/config.yaml; this is only a recommendation here).
+  method_max_n:
+    kamada_kawai: 2000
+    sammon_classic: 2000
+    # mds (sklearn SMACOF, n_init=4, CPU): on graphs with 4-5k nodes ~7 CPU-h
+    # (64% of the whole E3, see
+    # documentation/2026-09-12_gpu_pcg_a_metriky_velkych_grafu.md); same
+    # goal as sammon_alpha0_smacof, therefore skipped above 3000 nodes
+    # (cora 2485 remains) - decision made 2026-09-12 evening, main session.
+    mds: 3000
+  # K8: a memory safeguard for large graphs (resistance distance ~0.9 GB for
+  # a single (10680 x 10680) float64 matrix - see reserse R5) - limit
+  # concurrent workers only for tasks on large graphs (small graphs keep
+  # running with the full parallel.n_workers from common/config.yaml,
+  # 2026-09-14: 12).
+  # 2026-09-13 (documentation/2026-09-13_gpu_pametova_optimalizace.md): 4 -> 2.
+  # All 5 SMACOF methods run on large graphs on the SAME shared GPU (RTX
+  # 3070 Ti, 8.59 GB, dwm/Windows holds 0.7-2.4 GB). After the memory
+  # optimization of `smacof_solve_gpu` (block-wise RHS without n x n
+  # temporaries, byte-based modes), the peak per worker for pgp (n=10680,
+  # float64, n^2 = 0.91 GB) is: guttman (alpha=0) ~1.3 GB, resident CG
+  # (alpha>0) ~2.3 GB (D+W 1.83 + buffers 0.26 + context ~0.3) - measured by
+  # the probe src/sammon/gpu_memory_probe.py
+  # (results/data/quick/gpu_memory_probe.csv). 2 workers: worst case
+  # 2 x 2.3 + 2.4 dwm = 7.0 GB < 8.59 GB (no WDDM paging to RAM); 4 workers:
+  # 4 x 2.3 + 2.4 = 11.6 GB -> paging (observed 2026-09-13: iterations > 6
+  # min, run terminated after 10 h at iteration 83/300).
+  large_graph_max_workers: 2
+  # 2026-09-13 (documentation/2026-09-13_hardening_behu.md): VRAM preflight
+  # before a batch of large graphs on GPU
+  # (exp3_graph_layout.py::preflight_gpu_memory): estimated peak per worker
+  # (src/sammon/solvers/smacof.py::estimate_gpu_peak_bytes, same formulas as
+  # select_gpu_mode) x large_graph_max_workers + gpu_reserved_other_bytes
+  # must be <= gpu_preflight_safety x total VRAM
+  # (torch.cuda.mem_get_info()[1]), otherwise RuntimeError with a
+  # recommended worker count - instead of 10 h of paging (the 2026-09-13
+  # incident). gpu_reserved_other_bytes: memory held by other processes
+  # (dwm/Windows compositor, browser) - measured 2026-09-13 with nvidia-smi
+  # up to ~2.4 GB.
+  gpu_reserved_other_bytes: 2.4e+9
+  gpu_preflight_safety: 0.9
+  # K8 follow-up task (documentation/2026-09-12_s2_koder_b.md, coordinator
+  # message): device for the eigh-based pseudoinverse of the Laplacian for
+  # large graphs (src/datasets/graph_distance.py::_laplacian_pinv_eigh) -
+  # GPU accuracy (torch.linalg.eigh float64) vs. CPU (scipy.linalg.eigh)
+  # verified directly on karate: difference 6e-15 (see
+  # tests/test_graph_distance.py), far below the required tolerance of
+  # 1e-8. 'cuda' is used ONLY for graphs above large_graph_threshold_nodes
+  # (smaller graphs still take the pinv branch on CPU, unchanged) -
+  # fail-loud check of CUDA availability at the start of main()
+  # (exp3_graph_layout.py), no silent fallback to CPU.
+  resistance_device: "cuda"
+  # K8 follow-up task: device override ONLY for large graphs (n_lcc >
+  # large_graph_threshold_nodes) AND ONLY for methods in
+  # 'large_graph_device_methods' below (the alpha-Sammon SMACOF family) -
+  # implemented as a temporary, per-worker-process mutation of
+  # methods.<name>.device in exp3_graph_layout.py (`_override_method_device`),
+  # WITHOUT changing the global `methods.*.device` in common/config.yaml
+  # (E1 timings must stay CPU-based, see the coordinator message). Fail-loud:
+  # if CUDA is not available, main() fails immediately at the start (no
+  # silent fallback to CPU); if 'cuda' is requested for a method without a
+  # 'device' key in common/config.yaml methods.<name>, the override raises
+  # KeyError (see the _override_method_device docstring).
+  large_graph_device: "cuda"
+  # 2026-09-12 follow-up task
+  # (documentation/2026-09-12_gpu_pcg_a_metriky_velkych_grafu.md): the
+  # ORIGINAL finding (see the historical text kept below in this section for
+  # traceability) was "GPU CG unstable for alpha>0, alpha=0 OK" - while
+  # fixing/testing PCG (Jacobi preconditioning, `_torch_cg` in
+  # `src/sammon/solvers/smacof.py`), it turned out that float32 GPU CG is
+  # actually unstable even for alpha=0 (a near-null "translation" mode of
+  # the Laplacian V + reg_rho/n*11^T with reg_rho=1e-8 -> for n~2500-5000
+  # the condition number is ~n/reg_rho ~1e11-1e12, which float32
+  # (eps~1.2e-7) cannot handle - the original "success" of alpha=0 was an
+  # accident of the original, numerically less correct degeneracy threshold
+  # in CG, which happened to behave like a fail-safe stop; fixing the
+  # threshold to a scale-invariant Rayleigh quotient removed this
+  # "accidental fail-safe" and revealed the actual instability). The
+  # float64 GPU branch (now functional - `sammon.gpu_dense.dtype`='float64'
+  # via `large_graph_gpu_dtype` below) resolves ALL these cases exactly and
+  # faster than CPU float64 (see the measurement table in the document
+  # above: cora+power_grid, both shortest_path and resistance, alpha in
+  # {0,1,2,auto} - relative difference of stress_scale_invariant CPU vs GPU
+  # float64 always < 3e-6, far below the required tolerance of 1e-3; GPU
+  # float64 is 8-30x faster than CPU float64 at the same n). Float32 GPU CG
+  # is therefore NOT used for any SMACOF method on large graphs - see
+  # `large_graph_gpu_dtype`.
+  large_graph_device_methods:
+    - sammon_alpha0_smacof
+    - sammon_alpha_smacof
+    - sammon_alpha2_smacof
+    - sammon_alpha_auto
+    - sammon_alpha_pred
+  # 2026-09-12: dtype used by the GPU SMACOF branch for large graphs
+  # (temporary override of `sammon.gpu_dense.dtype`, see
+  # `_override_gpu_dtype` in exp3_graph_layout.py). 'float64' was chosen as
+  # the DEFAULT (not just a fallback for alpha>0/resistance, as originally
+  # proposed) - measurements showed that float32 in 'gpu_cg' mode (the n
+  # range of all large E3 graphs) is unstable INDEPENDENTLY of alpha (even
+  # for alpha=0, see above), so 'float32' would not be safely usable for any
+  # of the 5 SMACOF methods in `large_graph_device_methods`. The cost of
+  # float64 (slower FP64 on the RTX 3070 Ti) is negligible relative to the
+  # speedup over CPU - GPU float64 is still an order of magnitude faster
+  # than CPU float64 at the same n (see the measurement table), so there is
+  # no reason to risk float32 anywhere in this n range.
+  large_graph_gpu_dtype: "float64"
+  quick:
+    seeds: [0, 1]
+    # K8: 'cora' (n_lcc=2485 > large_graph_threshold_nodes) added to quick,
+    # so the quick mode also tests the "large graph" path (eigh-based
+    # resistance distance, large_graph_seeds, method_max_n skip) without a
+    # full E3 run - see the K8 requirement "smoke E3 on a small graph + one
+    # new graph in quick mode".
+    datasets: ["karate", "florentine", "cora"]
+    distance_metrics: ["shortest_path"]
+    # sammon_alpha0_smacof added so that quick regularly exercises the
+    # device override (large_graph_device/large_graph_device_methods) on
+    # cora (n_lcc=2485 > large_graph_threshold_nodes) through the real
+    # pipeline code (not just a manual call), see
+    # documentation/2026-09-12_s2_koder_b.md. 2026-09-12:
+    # 'sammon_alpha_smacof' (alpha=1) is already in this list - as of this
+    # date it is also in large_graph_device_methods (GPU float64), so the
+    # quick run now also regularly exercises the PCG+float64
+    # weighted-stress case on cora (see
+    # documentation/2026-09-12_gpu_pcg_a_metriky_velkych_grafu.md).
+    distance_methods: [mds, sammon_classic, sammon_alpha_smacof, sammon_alpha0_smacof]
+  # smoke: all graphs x both distance metrics x all methods (distance and
+  # native), 1 seed only. K8: 'datasets' here DELIBERATELY does NOT include
+  # the 5 new large graphs (unlike the usual convention "smoke = full list
+  # of datasets/methods") - resistance distance for pgp (n=10680) would be
+  # expensive even in smoke mode (on the order of minutes, see reserse R5),
+  # and the author only allows this agent to run --smoke/--quick, not a
+  # large unsupervised computation; large graphs are already covered by
+  # 'quick' (cora), and the author runs the full run with --full.
+  smoke:
+    seeds: [0]
+    datasets: ["karate", "les_miserables", "florentine", "dolphins", "football", "polbooks", "email_eu_core"]
+
+exp4_temporal:
+  n_components: 2
+  # 2026-09-13 (K11, documentation/2026-09-13_e4_rozsireni_datasetu.md): 3 -> 7
+  # datasets, so that the "lambda~1" conclusion does not rest on only 3
+  # SocioPatterns networks. invs13/sfhh/ht09 are additional SocioPatterns
+  # contact networks (loaders in src/datasets/temporal.py),
+  # email_eu_core_temporal is a NON-SocioPatterns control (SNAP, email
+  # communication, different topology and time scale).
+  datasets: [
+    "primary_school_temporal", "hospital_temporal", "high_school_temporal",
+    "invs13_temporal", "sfhh_temporal", "ht09_temporal", "email_eu_core_temporal",
+  ]
+  # Per-dataset time_bin_sec/min_snapshot_nodes (replaces the original
+  # single global pair of keys - each SocioPatterns dataset has a different
+  # contact density and measurement length, so the same window would give
+  # dozens of snapshots for one and hundreds for another). Chosen so that
+  # after filtering out night/weekend gaps (see _load_snapshots in
+  # exp4_temporal.py, min_snapshot_nodes), roughly 10-40 usable snapshots
+  # with >= 20 nodes in the largest connected component remain - verified
+  # manually on 2026-09-11 (see
+  # documentation/2026-09-11_e4_dalsi_datasety.md) for the original 3 and on
+  # 2026-09-13 (documentation/2026-09-13_e4_rozsireni_datasetu.md, computed
+  # directly via _load_snapshots) for the new 4:
+  #   primary_school_temporal: bin=3600s (1h) -> ~20 usable snapshots
+  #   hospital_temporal:       bin=7200s (2h) -> 27 usable snapshots (of 49)
+  #   high_school_temporal:    bin=7200s (2h) -> 23 usable snapshots (of 51)
+  #   invs13_temporal:         bin=10800s (3h) -> 20 usable snapshots (of 92), median LCC=37
+  #   sfhh_temporal:           bin=3600s (1h) -> 21 usable snapshots (of 32), median LCC=188
+  #   ht09_temporal:           bin=3600s (1h) -> 32 usable snapshots (of 59), median LCC=70
+  #   email_eu_core_temporal:  bin=1814400s (21 days) -> 26 usable snapshots (of 39), median LCC=674
+  dataset_params:
+    primary_school_temporal: {time_bin_sec: 3600, min_snapshot_nodes: 20}
+    hospital_temporal: {time_bin_sec: 7200, min_snapshot_nodes: 20}
+    high_school_temporal: {time_bin_sec: 7200, min_snapshot_nodes: 20}
+    invs13_temporal: {time_bin_sec: 10800, min_snapshot_nodes: 20}
+    sfhh_temporal: {time_bin_sec: 3600, min_snapshot_nodes: 20}
+    ht09_temporal: {time_bin_sec: 3600, min_snapshot_nodes: 20}
+    email_eu_core_temporal: {time_bin_sec: 1814400, min_snapshot_nodes: 20}
+  alphas: [1.0]
+  # TemporalSammon solver: 'smacof' (anchor directly in the Guttman step,
+  # section 6.2) and 'sgd' (anchor step after each epoch, section 6.3,
+  # gamma_mode='fixed')
+  solvers: ["smacof", "sgd"]
+  # number of independent seeds per (lambda,alpha) combination - a temporal
+  # run is expensive (T snapshots x SMACOF), so fewer seeds than E1/E3/E5
+  # (see sections 6.5/9 of the specification - the unit of independence for
+  # the statistics is the snapshot, not the seed)
+  seeds: [0, 1, 2]
+  max_iter: 300
+  tol: 1.0e-4
+  # number of permutations for the permutation test over snapshots (specification section 9: >= 1000)
+  n_permutations: 1000
+  permutation_seed: 42
+  # seed for which full trajectories are saved to exp4_trajectories.csv (all
+  # seeds would inflate the file unnecessarily - one representative one is enough)
+  trajectory_seed: 0
+  # K15 (2026-09-15, documentation/2026-09-15_e4_metrika_sousedstvi.md): K
+  # values for the NEIGHBORHOOD-PRESERVATION metrics (trustworthiness/
+  # continuity - Venna & Kaski 2001/2006; kNN Jaccard) computed both
+  # post-hoc (exp4_neighbor_metrics.py, 1 seed over
+  # exp4_trajectories.csv) and directly in exp4_temporal.py (all seeds,
+  # trust_k<K>/jacc_k<K> aggregates in the results CSV). Deliberately the
+  # same key in both places - no duplication of the K grid. The smallest
+  # snapshots used (min_snapshot_nodes=10 in smoke, =20 in quick/full) often
+  # give an invalid combination for K=10 (2n-3K-1<=0, see
+  # metrics.py::_trustworthiness_continuity) - the RESULT IS NaN + a 'note'
+  # in the CSV, not a fabricated value (fail-loud rule).
+  neighbor_k: [5, 10]
+  # 2026-09-14: external "dynamic t-SNE" baseline (Rauber et al. 2016,
+  # src/sammon/dynamic_tsne.py) - the lambda_dt grid (units per Rauber 2016,
+  # normalization 1/(2*N_t) in the objective function, see
+  # common/config.yaml sammon.temporal.dtsne). The 'dtsne_lambda<L>' methods
+  # run in the SAME CSV (exp4_temporal_results.csv) over the same
+  # 'datasets'/'seeds'/'dataset_params' as the smacof/sgd family above.
+  # `perplexity` is its OWN key (NOT methods.tsne.perplexity=30 from E1) -
+  # full datasets have, after filtering with min_snapshot_nodes=20 (see
+  # dataset_params above), smallest snapshots with exactly 20 nodes, and
+  # t-SNE requires perplexity < n (see
+  # src/sammon/dynamic_tsne.py::_binary_search_perplexity); 30 would fail
+  # this fail-loud check on such a snapshot. perplexity=10 leaves a safe
+  # margin (n/perplexity >= 2 even in the worst case, typically much more -
+  # see median LCC 37-674 in the dataset_params comment).
+  dtsne:
+    lambdas: [0.0, 0.01, 0.1, 1.0, 10.0]
+    perplexity: 10
+    # matches E1 methods.tsne.max_iter (van der Maaten & Hinton 2008
+    # recommend a few hundred to 1000 iterations for convergence at this
+    # scale of n); quick/smoke have their own (shorter) value below.
+    max_iter: 1000
+  # 2026-09-13 (K11): quick/smoke HERE EXCEPTIONALLY also override
+  # `datasets:` (unlike the usual convention "the datasets/methods lists are
+  # not given in quick/smoke", see
+  # config_experiments.py::resolve_experiment_config) - the full run with 7
+  # datasets is already expensive (T snapshots x SMACOF/SGD x 8 lambdas x 2
+  # solvers x 3 seeds per dataset), so quick/smoke test only the original 3
+  # + ONE new small dataset (invs13_temporal - the smallest of the 4 new
+  # ones, 92 nodes) - enough to verify that the loader/resume/CSV schema
+  # works for the new datasets too, without unnecessarily lengthening every
+  # smoke/quick run.
+  quick:
+    seeds: [0]
+    datasets: [
+      "primary_school_temporal", "hospital_temporal", "high_school_temporal", "invs13_temporal",
+    ]
+    dataset_params:
+      primary_school_temporal: {time_bin_sec: 3600, min_snapshot_nodes: 10}
+      hospital_temporal: {time_bin_sec: 7200, min_snapshot_nodes: 10}
+      high_school_temporal: {time_bin_sec: 7200, min_snapshot_nodes: 10}
+      invs13_temporal: {time_bin_sec: 10800, min_snapshot_nodes: 10}
+    max_iter: 60
+    n_permutations: 100
+    trajectory_seed: 0
+    dtsne:
+      lambdas: [0.0, 1.0]
+      # min_snapshot_nodes=10 in this mode (see dataset_params above) ->
+      # perplexity must be < 10 (see the perplexity comment in the 'full' block).
+      perplexity: 3
+      max_iter: 60
+  # smoke: both solvers (smacof, sgd) x a small lambda grid {0,1} (the
+  # lambda_grid key EXISTS only for smoke - full/quick use
+  # sammon.temporal.lambda_grid from the main config.yaml, see
+  # exp4_temporal.py), 1 seed, minimal snapshot/iteration counts, but ALL
+  # datasets from `datasets:` HERE (see above - just 3+1, not all 7) -
+  # dataset_params must cover every name from this sub-block's `datasets:` -
+  # this sub-block entirely REPLACES the `dataset_params` key from the
+  # 'full' block during smoke/quick mode, see
+  # resolve_experiment_config._resolve_node)
+  smoke:
+    seeds: [0]
+    datasets: [
+      "primary_school_temporal", "hospital_temporal", "high_school_temporal", "invs13_temporal",
+    ]
+    dataset_params:
+      primary_school_temporal: {time_bin_sec: 3600, min_snapshot_nodes: 10}
+      hospital_temporal: {time_bin_sec: 7200, min_snapshot_nodes: 10}
+      high_school_temporal: {time_bin_sec: 7200, min_snapshot_nodes: 10}
+      invs13_temporal: {time_bin_sec: 10800, min_snapshot_nodes: 10}
+    max_iter: 30
+    n_permutations: 50
+    trajectory_seed: 0
+    lambda_grid: [0.0, 1.0]
+    dtsne:
+      lambdas: [0.0, 1.0]
+      # min_snapshot_nodes=10 in this mode (see dataset_params above) ->
+      # perplexity must be < 10 (see the perplexity comment in the 'full' block).
+      perplexity: 3
+      max_iter: 30
+
+# K16 (2026-09-16, documentation/2026-09-16_e4_hierarchicky_test.md) -
+# hierarchical test of neighborhood preservation for our temporal family vs.
+# dynamic t-SNE, separated from `exp4_temporal:` (reads ONLY already saved
+# data, no new SMACOF/SGD/dtsne run). Two test modes:
+#  (1) primary confirmatory test - unit of independence = DATASET (n=7 in
+#      the 'full' mode = the number of items in exp4_temporal.datasets),
+#      over already medianed values from exp4_temporal_results.csv (all 3
+#      seeds). Exact sign-flip permutation test over datasets
+#      (2^n_datasets permutations - see
+#      stats_holdout.exact_sign_flip_pvalue), Holm ONLY over `primary_metrics`.
+#  (2) descriptive (exploratory) tests over individual snapshots (1 seed,
+#      exp4_neighbor_metrics_results.csv) - WITHOUT Holm correction (it was
+#      toothless at the n_permutations of the original
+#      `exp4_temporal.n_permutations` and confusing over 672 tests, see the
+#      author's requirement 2026-09-15), its own (higher) number of
+#      permutations `descriptive_n_permutations`.
+exp4_neighbor_metrics:
+  # metrics for the primary confirmatory test (K10, K5 neighborhood
+  # preservation) - must exist as columns in exp4_temporal_results.csv
+  # (trust_k<K>/jacc_k<K>, see exp4_temporal.py neighbor_k). The order also
+  # determines the order of the Holm correction.
+  primary_metrics: ["trust_k10", "jacc_k10", "trust_k5", "jacc_k5"]
+  # variant of the exact sign-flip test - "two-sided" (no prior assumption
+  # about the direction of the effect, see the convention in
+  # exp1_holdout_confirmatory.py).
+  primary_alternative: "two-sided"
+  # bootstrap CI (percentile, paired) for the median difference of the primary test
+  n_boot: 10000
+  bootstrap_seed: 42
+  # descriptive (exploratory) permutation test over snapshots (replaces the
+  # original sharing of exp4_temporal.n_permutations=1000, which after the
+  # Holm correction over 672 tests could not reject anything - see the K16
+  # documentation)
+  descriptive_n_permutations: 20000
+  descriptive_permutation_seed: 42
+  quick:
+    n_boot: 1000
+    descriptive_n_permutations: 2000
+  smoke:
+    n_boot: 200
+    descriptive_n_permutations: 200
+
+exp5_ablation:
+  n_components: 2
+  datasets: ["iris", "digits", "coil20", "swiss_roll", "severed_sphere", "football"]
+  # football is a graph -> converted to a shortest-path distance matrix (see exp5_ablation.py)
+  football_distance_metric: "shortest_path"
+  digits_n: 1000
+  coil20_n: 1000
+  swiss_roll_n: 1000
+  severed_sphere_n: 1000
+  alpha_grid: [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
+  inits: ["pca", "random", "classical_mds"]
+  eps_D_q_grid: [0.0, 0.1, 0.25]
+  seeds: [0, 1, 2, 3, 4]
+  solver: "smacof"
+  max_iter: 300
+  tol: 1.0e-4
+  quick:
+    datasets: ["iris", "swiss_roll"]
+    digits_n: 200
+    coil20_n: 200
+    swiss_roll_n: 200
+    severed_sphere_n: 200
+    alpha_grid: [0.0, 1.0, 2.0]
+    inits: ["pca", "random"]
+    eps_D_q_grid: [0.0, 0.1]
+    seeds: [0, 1]
+    max_iter: 80
+  # smoke: all 6 datasets, the full init x eps_D_q grid, only alpha={0,1,2}
+  # (per the requirement) and 1 seed, small n/max_iter
+  smoke:
+    digits_n: 100
+    coil20_n: 100
+    swiss_roll_n: 100
+    severed_sphere_n: 100
+    alpha_grid: [0.0, 1.0, 2.0]
+    seeds: [0]
+    max_iter: 50
+
+# K6 (documentation/2026-09-12_plan_smeru_clanku.md) - exp6: fine alpha grid
+# {0,0.25,...,3.0} over all 32 E1 datasets (referencing
+# exp1_dr_benchmark.datasets via the YAML anchor &exp1_datasets, NOT a
+# copy). src/experiments/exp6_alpha_curves.py.
+exp6_alpha_curves:
+  datasets: *exp1_datasets
+  # Q1 step 2 (A.5, A.9 item 4): hold-out candidates - `--datasets
+  # all|core|holdout` (exp6_alpha_curves.py) analogous to
+  # exp1_dr_benchmark; NEVER in `datasets:` above.
+  datasets_holdout: *q1_holdout
+  n_components: 2
+  # subsample n_max=2000 (smaller than E1's n_max=5000 - exp6 has 13x more
+  # runs per dataset than E1, see the K6 requirement), the same
+  # SUBSAMPLE_SEED=42 and standardization as E1 (see exp6_alpha_curves.py -
+  # imports SUBSAMPLE_SEED from exp1_dr_benchmark)
+  n_max: 2000
+  alpha_grid: [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0]
+  # eps_D quantile q - taken from `sammon.eps_D.q` (common/config.yaml) as
+  # the default if this key is not given explicitly (see exp6_alpha_curves.py main()).
+  seeds: [0, 1, 2, 3, 4]
+  max_iter: 300
+  tol: 1.0e-4
+  # 'cpu' (DEFAULT, not sammon.device.default) - see the rationale in
+  # exp6_alpha_curves.py::main() (~12.8h sequential GPU vs. ~45-50min
+  # parallel CPU for the whole grid, measured by extrapolation from E1).
+  # 'cuda' is supported (automatically switches to sequential=True), only by
+  # a deliberate change here.
+  device: "cpu"
+  # K6: 6 datasets for the main figure fig_alpha_curves.pdf (3 concentrated
+  # high-dimensional + 3 low-dimensional manifolds, see the K4 two-regime
+  # map - nn_ratio_k1 contrast). The remaining 26 go into the supplement
+  # (fig_alpha_curves_all.pdf).
+  main_figure_datasets: [mnist_784, isolet, cnae9, swiss_roll, iris, helix]
+  quick:
+    datasets: [iris, swiss_roll, digits, mnist_784]
+    n_max: 300
+    alpha_grid: [0.0, 1.0, 2.0, 3.0]
+    seeds: [0, 1]
+    max_iter: 100
+  # smoke: ALL 32 datasets (per the project convention - smoke exercises
+  # every combination), but a small n_max/alpha_grid/1 seed, so the whole
+  # run takes only a few minutes.
+  smoke:
+    n_max: 150
+    alpha_grid: [0.0, 1.0, 2.0, 3.0]
+    seeds: [0]
+    max_iter: 60
+
+# Supplement typesetting fix (validator 2026-09-14,
+# podklady/2026-09-14_validace_clanku.md section 1.7): fig_alpha_curves_all.pdf
+# (32 panels, a 4x8 grid) at width=\textwidth (390pt in the supplement's
+# draft "preprint" class, see clanek/supplement/supplement.log) required a
+# height of 686.4pt, only ~500pt were available per page -> an overflow of
+# 186.4pt that clipped the last row of panels. Solution recommended by the
+# validator: split into 2 separate figures (4x4 = 16 panels each, instead of
+# 4x8) - src/figures/fig_alpha_curves.py::_make_supplement_figure.
+fig_alpha_curves_all:
+  n_cols: 4
+  # 32 datasets / 16 per page = exactly 2 pages of 4x4 (no leftover row)
+  datasets_per_page: 16
+  # height of one panel row in inches (originally derived as
+  # WIDTH_FULL_WIDTH_IN * 0.22 = 7.480in * 0.22 = 1.6456in for 4 columns;
+  # 4 rows per page * 1.65in = 6.6in = 475.2pt of height at a width of
+  # 538.5pt (WIDTH_FULL_WIDTH_IN), i.e. a height/width ratio of 0.88, well
+  # below the required <=1.23 (500pt available / 390pt width in the
+  # supplement draft) - see
+  # documentation/2026-09-14_oprava_fig_alpha_curves_all.md
+  panel_height_in: 1.65
+  title_fontsize: 7
+  tick_labelsize: 6
+  ylabel_fontsize: 6.5
+  suptitle_fontsize: 8
+
+# K7 (documentation/2026-09-12_plan_smeru_clanku.md) - derivation and LOO
+# validation of the rule alpha_pred = f(nn_ratio_k1) from K1
+# (dataset_properties.csv) + K6 (exp6_alpha_curves_results.csv).
+# src/experiments/fit_alpha_rule.py, src/sammon/alpha_predict.py,
+# src/methods/sammon_alpha_pred.py.
+sammon_alpha_pred:
+  # threshold tau for the "fraction of gain captured" gain_frac (R6-B):
+  # computed only for datasets where alpha_auto improves auc_rnx over
+  # alpha=0 by more than tau (otherwise near-division-by-zero - such
+  # datasets already confirm R1 Corollary 1 by themselves)
+  gain_frac_tau: 0.005
+  # candidate quantiles of log(nn_ratio_k1) for the threshold grid t1<t2 of
+  # the 'two_threshold' variant (see fit_alpha_rule.py::_fit_two_threshold)
+  # - derived from the data (quantiles), NOT fixed nn_ratio values, so the
+  # grid is robust to a change of the dataset set
+  two_threshold_quantile_grid: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  # Q1 step 2 (A.5): hold-out datasets are EXCLUDED from the rule fit (both
+  # LOO and the final coefficients over "all" datasets) - `fit_alpha_rule.py`
+  # filters them out of `dataset_properties.csv`/`exp6_alpha_curves_results.csv`
+  # BEFORE merging (`merged`). Test of agreement with the frozen JSON:
+  # tests/test_fit_alpha_rule.py::test_full_run_matches_frozen_rule.
+  holdout_datasets: *q1_holdout
+
+# Q1 step 2 (reserse/2026-09-14_specifikace_rozsireni_q1.md, A.9 item 9) -
+# power analysis (A.7 (a)-(d)) reproduced by the script
+# src/experiments/power_analysis_regime.py (no number in the article is
+# copied by hand).
+power_analysis_regime:
+  seed: 20260914
+  n_boot: 4000
+  alpha_onesided: [0.05, 0.025]
+  power_target: 0.8
+  n_grid: [10, 12, 15, 20, 25, 30, 40, 50, 66]
+  # input A.7: 10 observed paired differences Delta (pred - alpha0, auc_rnx,
+  # median over seeds, regime L, exp1_dr_benchmark_results.csv, status=ok) -
+  # TAKEN from the specification (an already-computed aggregate from the
+  # production E1 run, see the A.7 paragraph "Input"); the source of the
+  # numbers is cited directly here (in the config, NOT hardcoded in the
+  # script code).
+  observed_deltas_pred_minus_alpha0:
+    severed_sphere: -0.0292
+    two_moons: 0.0000
+    segment: 0.0209
+    hierarchical_clusters: 0.0264
+    torus: 0.0285
+    iris: 0.0382
+    swiss_roll: 0.0696
+    sphere: 0.0754
+    s_curve: 0.2268
+    helix: 0.2345
+  quick:
+    n_boot: 500
+  smoke:
+    n_boot: 100
+    n_grid: [10, 15, 25]
+
+# Q1 step 2 (A.6, A.9 item 8) - confirmatory/exploratory analysis of hold-out
+# datasets in regime L (families F_A1-F_A7). src/experiments/exp1_holdout_confirmatory.py.
+exp1_holdout_confirmatory:
+  seed: 20260914
+  n_boot: 10000
+  n_perm_mc: 20000
+  exact_perm_max_n: 22
+  tost_margin_auc: 0.01
+  eligibility:
+    min_d: 3
+    min_n: 150
+  # F_A6: threshold tau for gain_frac (same as
+  # sammon_alpha_pred.gain_frac_tau, repeated here explicitly so this script
+  # is independent of the other config block)
+  gain_frac_tau: 0.005
+  holm_alpha: 0.05
+  quick:
+    n_boot: 1000
+    n_perm_mc: 2000
+  smoke:
+    n_boot: 200
+    n_perm_mc: 500
+    eligibility:
+      min_d: 2
+      min_n: 20
+
+# Q1 step 2 (A.9 item 5) - screening of regime L candidates (step 0, BEFORE
+# running E1/E6 on the hold-out set). src/experiments/screen_regime_candidates.py.
+# Addendum 2026-09-14 (change of pre-registration, see reserse/...,
+# "Addendum 2026-09-14"): `is_control` for phoneme->false (empirically
+# low_ratio, see regime_candidates_screen.csv), for wall_robot/dry_bean->true
+# (empirically mid_ratio - the new control pair).
+# `designated_negative_controls` (below) is an independent anchor for the
+# sanity check in exp1_holdout_confirmatory.py (F_A3) - `is_control` in
+# `candidates` is only a descriptive column of the output CSV; the F_A3
+# statistic already used the EMPIRICALLY determined regime_frozen !=
+# 'low_ratio', not this list (no change in F_A3 behavior, only visibility of
+# the pre-registration).
+screen_regime_candidates:
+  n_max: 2000
+  subsample_seed: 42
+  designated_negative_controls: *q1_negative_controls
+  candidates:
+    - {key: shuttle, priority_rank: 1, is_control: false, requires_download: true}
+    - {key: abalone, priority_rank: 2, is_control: false, requires_download: true}
+    - {key: page_blocks, priority_rank: 3, is_control: false, requires_download: true}
+    - {key: airfoil, priority_rank: 4, is_control: false, requires_download: true}
+    - {key: banknote, priority_rank: 5, is_control: false, requires_download: true}
+    - {key: mfeat_morphological, priority_rank: 6, is_control: false, requires_download: true}
+    - {key: wall_robot, priority_rank: 7, is_control: true, requires_download: true}
+    - {key: hill_valley, priority_rank: 8, is_control: false, requires_download: true}
+    - {key: phoneme, priority_rank: 9, is_control: false, requires_download: true}
+    - {key: dry_bean, priority_rank: 10, is_control: true, requires_download: true}
+    - {key: ccpp, priority_rank: 11, is_control: false, requires_download: true}
+    - {key: swiss_roll_hole, priority_rank: 12, is_control: false, requires_download: false}
+    - {key: gaussian_clusters_separated, priority_rank: 13, is_control: false, requires_download: false}
+    - {key: mobius_strip, priority_rank: 14, is_control: false, requires_download: false}
+    - {key: klein_bottle_4d, priority_rank: 15, is_control: false, requires_download: false}
+    - {key: twin_peaks, priority_rank: 16, is_control: false, requires_download: false}
+    - {key: trefoil_knot, priority_rank: 17, is_control: false, requires_download: false}
+    - {key: hyperbolic_paraboloid, priority_rank: 18, is_control: false, requires_download: false}
+    - {key: anisotropic_ellipsoid, priority_rank: 19, is_control: false, requires_download: false}
+  quick:
+    n_max: 300
+    candidates:
+      - {key: banknote, priority_rank: 5, is_control: false, requires_download: true}
+      - {key: swiss_roll_hole, priority_rank: 12, is_control: false, requires_download: false}
+  smoke:
+    n_max: 200
+    candidates:
+      - {key: banknote, priority_rank: 5, is_control: false, requires_download: true}
+      - {key: swiss_roll_hole, priority_rank: 12, is_control: false, requires_download: false}
+      - {key: trefoil_knot, priority_rank: 17, is_control: false, requires_download: false}
+      # Addendum 2026-09-14 (N>=26) - verification of the new generators via the official pipeline
+      - {key: hyperbolic_paraboloid, priority_rank: 18, is_control: false, requires_download: false}
+      - {key: anisotropic_ellipsoid, priority_rank: 19, is_control: false, requires_download: false}
+
+# K13 (documentation/2026-09-12_plan_smeru_clanku.md) - S4 supplement:
+# rank-weighted stress (w_ij = ((r_ij+r_ji)/2)^-beta, r = neighbor rank) vs.
+# the distance weights of alpha-Sammon (w_ij = D_ij^-alpha) - a negative
+# pilot result from
+# `reserse/skripty_20260912_myslitel/pilot_rank_weights.py` rewritten into a
+# reproducible experiment (checkpoint/resume, config, no magic numbers).
+# src/experiments/exp7_rank_weights.py.
+exp7_rank_weights:
+  datasets: [mnist_784, isolet, cnae9, olivetti, digits, coil20, iris, swiss_roll]
+  n_components: 2
+  n_max: 1000
+  seeds: [0, 1, 2]
+  max_iter: 300
+  tol: 1.0e-4
+  # distance weights (alpha-Sammon family) - same definition as
+  # sammon_alpha*_smacof (src/sammon/weights.py::alpha_weights, eps_D from
+  # sammon.eps_D.k/q)
+  dist_alpha_grid: [0.0, 1.0, 2.0]
+  # weights by neighbor rank (src/experiments/exp7_rank_weights.py::rank_weights)
+  rank_beta_grid: [0.5, 1.0, 2.0]
+  # baseline neighborhood methods for comparison (perplexity/n_neighbors
+  # from their own config blocks in common/config.yaml methods.*, here just
+  # the list of which one to call via src/methods/registry.py)
+  baseline_methods: [tsne]
+  quick:
+    datasets: [iris, swiss_roll]
+    n_max: 200
+    seeds: [0]
+    max_iter: 100
+    dist_alpha_grid: [0.0, 1.0]
+    rank_beta_grid: [1.0]
+  smoke:
+    n_max: 120
+    seeds: [0]
+    max_iter: 60
+    dist_alpha_grid: [0.0, 1.0]
+    rank_beta_grid: [1.0]
+
+# K1 (documentation/2026-09-12_plan_smeru_clanku.md): properties of the
+# input datasets of E1 (vector/synthetic) + E3 (graph inputs via 2 distance
+# metrics) on the same subsample/standardization as the respective
+# experiment. src/experiments/dataset_properties.py.
+dataset_properties:
+  # k for nn_ratio_k<k> (median distance to the k-th neighbor / median of all pairwise distances)
+  nn_ratio_ks: [1, 5, 10]
+  # k for the Levina & Bickel (2004) MLE estimate of intrinsic dimension
+  id_mle_k: 10
+  # k for hubness (Radovanovic et al. 2010) - skewness of the N_k occurrence distribution
+  hubness_k: 10
+  # fraction of points (ordered by mu=r2/r1) used in the TwoNN (Facco et
+  # al. 2017) linear regression - the rest (distribution tails) is discarded
+  twonn_fraction: 0.9
+
+# K2 (documentation/2026-09-12_plan_smeru_clanku.md) - inter-cluster
+# geometry over ALREADY SAVED exp1_dr_benchmark embeddings (no re-run of DR
+# methods). src/experiments/exp1_cluster_geometry.py.
+exp1_cluster_geometry:
+  quick:
+    max_datasets: 3
+  smoke:
+    max_datasets: 3
+
+# K3 (documentation/2026-09-12_plan_smeru_clanku.md) - Pareto analysis over
+# the already existing exp1_dr_benchmark_results.csv (no re-run).
+# src/experiments/pareto_analysis.py.
+pareto_analysis:
+  # metric pairs for the Pareto fronts (name -> direction: max/min), see
+  # src/experiments/pareto_analysis.py::pareto_front_mask
+  fronts:
+    auc_stress:
+      auc_rnx: max
+      stress_scale_invariant: min
+    qlocal_qglobal:
+      q_local: max
+      q_global: max
+
+# Method selection for the MAIN article text (tables/figures) - the
+# supplement contains the full set of all methods from
+# exp1_dr_benchmark.methods. Used in K3 (Pareto analysis), K12 (main.py
+# tables/macros). No method is hardcoded in the code.
+report:
+  main_methods:
+    - sammon_alpha0_smacof
+    - sammon_alpha_auto
+    - sammon_alpha_smacof
+    - sammon_alpha2_smacof
+    - mds
+    - pca
+    - tsne_auto
+    - umap_auto
+    - pacmap
+    - trimap
+    # K5 (documentation/2026-09-12_plan_smeru_clanku.md): new neighborhood/
+    # diffusion baseline methods
+    - densmap
+    - phate
+    # K7: predicted alpha (no tuning, 1 SMACOF run) - src/methods/sammon_alpha_pred.py
+    - sammon_alpha_pred
+  # K12b: metrics of the main E1 table (results/tables/exp1_main_table.*,
+  # src/experiments/report_tables.py) -> direction ("max"=higher is better, "min"=lower is better)
+  main_table_metrics:
+    auc_rnx: "max"
+    trustworthiness_k7: "max"
+    stress_scale_invariant: "min"
+    q_global: "max"
+    shepard_spearman_rho: "max"
+    class_spread_spearman: "max"
+    centroid_dist_spearman: "max"
+    wall_time_sec: "min"
+  # subset of main_table_metrics that comes from exp1_cluster_geometry_results.csv
+  # (K10; the E1 CSV has these columns only for methods added after the evaluate() extension)
+  main_table_cluster_geometry_metrics:
+    - class_spread_spearman
+    - centroid_dist_spearman
+  # K12c: numerical agreement tolerance for the classical_mds vs pca init in
+  # E5 (max |difference| of the metric over paired runs; above the
+  # tolerance a WARNING, below it INFO - the merge into a single 'pca'
+  # level always happens, the difference is always written to the CSV)
+  exp5_init_merge_tolerance: 1.0e-3
+  # methods against which "dominated_by_neighbor_method" is computed in the Pareto analysis (K3)
+  neighbor_methods:
+    - tsne
+    - tsne_auto
+    - umap
+    - umap_auto
+    - pacmap
+    - trimap
+    - densmap
+    - phate
+  # synthetic datasets (src/datasets/synthetic.py) - used in K4
+  # (fig_regime_map.py) for synthetic/real coloring and the correlation
+  # variant without synthetic datasets (reserse direction B robustness requirement)
+  synthetic_datasets:
+    - swiss_roll
+    - s_curve
+    - sphere
+    - severed_sphere
+    - helix
+    - torus
+    - two_moons
+    - gaussian_clusters
+    - hierarchical_clusters
+
+stats:
+  alpha: 0.05
+  # primary metrics for the Friedman test (section 9, pseudocode part B):
+  # metric name -> direction ("max"=higher is better, "min"=lower is better)
+  primary_metrics:
+    auc_rnx: "max"
+    stress_scale_invariant: "min"
+    trustworthiness_k7: "max"
+  # critical values q_alpha for the Nemenyi post-hoc test (Demsar, J.
+  # (2006), "Statistical Comparisons of Classifiers over Multiple Data
+  # Sets", JMLR 7:1-30, Table 5 (studentized range statistic, alpha=0.05),
+  # key = number of compared methods k.
+  # K14 (2026-09-13, documentation/2026-09-13_k14_uklid_hardening.md): the
+  # code no longer uses this table - `src/experiments/stats.py::nemenyi_q_alpha`
+  # computes q_alpha directly from `scipy.stats.studentized_range` for ANY
+  # number of methods k (the original table stops at k=20 and caused a
+  # KeyError/WARNING for the E1 supplement with over 21 methods). The table
+  # is KEPT HERE only as a reference/regression fixture for
+  # `tests/test_stats.py::test_nemenyi_q_alpha_matches_legacy_table_for_k_le_20`
+  # (formula agrees with the table to 1e-3).
+  nemenyi_q_alpha_0_05:
+    2: 1.960
+    3: 2.343
+    4: 2.569
+    5: 2.728
+    6: 2.850
+    7: 2.949
+    8: 3.031
+    9: 3.102
+    10: 3.164
+    11: 3.219
+    12: 3.268
+    13: 3.313
+    14: 3.354
+    15: 3.391
+    16: 3.426
+    17: 3.458
+    18: 3.489
+    19: 3.517
+    20: 3.544
+
+# S2 tweak (documentation/2026-09-12_kontrola_vysledku_s1.md sections 3-4):
+# lambda labels in fig_temporal_pareto.py only for a selected grid, so they
+# do not overlap for small lambda (see the K9/K11 requirement "tweak
+# figures from S1").
+fig_temporal_pareto:
+  label_lambdas: [0.1, 0.3, 1.0, 3.0, 10.0]
+
+# S2 tweak: fig_regime_map.py - dataset labels overlapped at all 32 (see
+# kontrola_vysledku_s1.md); 'label_datasets' is a curated subsample covering
+# both regimes (low/high nn_ratio_k1) and a few borderline cases, the rest
+# of the datasets stay in the figure without a name label (so no
+# information is lost, only the visual clutter is reduced). Panel 2 (best
+# alpha from {0,1,2}) has only 3 discrete y values -> points overlap, hence
+# a small deterministic jitter in y (jitter_seed/jitter_std).
+fig_regime_map:
+  label_datasets:
+    - iris
+    - helix
+    - swiss_roll
+    - two_moons
+    - segment
+    - hierarchical_clusters
+    - severed_sphere
+    - digits
+    - mnist_784
+    - cnae9
+    - letter
+    - spambase
+    - glass
+  jitter_seed: 42
+  jitter_std: 0.06
+
+# K10 (documentation/2026-09-12_plan_smeru_clanku.md) - "faithful map" hero
+# figure: datasets x methods over ALREADY SAVED exp1_dr_benchmark embeddings
+# (seed 'seed' below) - no re-run of DR methods. src/figures/fig_faithful_map.py.
+fig_faithful_map:
+  datasets: ["mnist_784", "iris", "hierarchical_clusters"]
+  methods: ["sammon_alpha0_smacof", "sammon_alpha_auto", "tsne_auto", "umap_auto"]
+  seed: 0
+  # 1-sigma scatter ellipse of the class in the output (multiple of the standard deviation)
+  ellipse_n_std: 1.0
+  # accompanying CSV (coordinates+classes+residuals) trimmed to this many
+  # points per panel (the PDF always shows all points, rasterized) - same
+  # convention as figures.gallery_methods.csv_max_points_per_panel
+  csv_max_points_per_panel: 2000
+  csv_subsample_seed: 42
+
+# K11 (documentation/2026-09-12_plan_smeru_clanku.md) - focused figure of
+# graph layouts (replaces the original fig_graph_layouts.py, which is
+# renamed to fig_graph_layouts_all.py for the supplement, see the K11
+# requirement).
+fig_graph_layouts_focus:
+  # K11: 'cora' added only IF its E3 embeddings already exist (see the K11
+  # requirement "after K8, cora optionally, if embeddings exist - otherwise
+  # skip with a log") - the script checks this at run time; this list is a
+  # CANDIDATE set, not a guaranteed result.
+  graphs: ["polbooks", "football", "cora"]
+  distance_metrics: ["shortest_path", "resistance"]
+  methods: ["sammon_alpha0_smacof", "sammon_alpha_auto", "tsne_auto", "umap_auto", "spring"]
+
+# Q1 step 1 (reserse/2026-09-14_specifikace_rozsireni_q1.md, backed up/
+# refined in the author's requirement 2026-09-14) - post-hoc empirical
+# verification of Proposition 2 (clanek/sections/03_metoda.tex, lines
+# ~165-210: local residual and rho_NN) OVER ALREADY COMPUTED exp6_alpha_curves
+# embeddings (no new DR computation). src/experiments/exp8_prop2_check.py.
+exp8_prop2_check:
+  # eps_D (k, q) MUST be exactly identical to exp6_alpha_curves.py::main()
+  # (otherwise eps_D would not match the weights with which the embedding
+  # was actually computed) - k is always taken from `sammon.eps_D.k`
+  # (common/config.yaml), q from `exp6_alpha_curves.eps_D_q` if given,
+  # otherwise also from `sammon.eps_D.q` - see
+  # exp8_prop2_check.py::_resolve_eps_D_kq, which replicates exactly this
+  # logic (no own copy of the numbers).
+  #
+  # Tolerance for verifying the assumption (P2) sigma_alpha(Y_alpha) <=
+  # sigma_alpha(Ybar): SMACOF converges at tol=1.0e-4 (exp6_alpha_curves.tol),
+  # not to the exact global minimum, so a small numerical overshoot must not
+  # lead to a false rejection of P2. p2_tolerance_abs protects the case
+  # sigma_bar~0 (alpha=0 -> Y=Ybar, exact equality expected up to rounding).
+  p2_tolerance_rel: 1.0e-6
+  p2_tolerance_abs: 1.0e-9
+  # Numerical tolerance for "eps_D is practically zero"
+  # (src/sammon/prop2_check.py::evaluate_proposition2). `estimate_eps_D`
+  # (src/sammon/weights.py) already itself guarantees eps_D > 0 (otherwise
+  # fail-loud), so eps_D below this value means practically missing
+  # regularization (numerical noise), not a legitimately small but
+  # effective eps_D. Fail-loud for D_min=0 (duplicate points) triggers ONLY
+  # if eps_D <= eps_d_zero_tol - see the fix on 2026-09-14
+  # (documentation/2026-09-14_exp8_prop2_check.md, "Overly strict check for
+  # D_min=0"); before that, fail-loud always triggered on D_min=0 regardless
+  # of eps_D, which excluded entire datasets with exact duplicates (iris,
+  # glass, ...).
+  eps_d_zero_tol: 1.0e-12
+  # alphas for which the median tightness_b is computed in the summary table (K12a macros)
+  summary_alphas: [1.0, 2.0, 3.0]
+  # grid of thresholds tau for alpha_bound (fig_prop2_alpha_prediction): the
+  # smallest alpha from exp6_alpha_curves.alpha_grid at which far_share(Ybar)
+  # drops below tau - see
+  # fig_prop2_alpha_prediction.py::compute_alpha_bound. tau=0.05 (5% of the
+  # R_near(Ybar)-equivalent weighted budget belongs to far pairs) chosen as
+  # the default middle of the grid {0.01, 0.05, 0.1}: 0.01 is too strict (on
+  # the fine grid of alpha_grid with step 0.25, often unreachable before
+  # alpha=3), 0.1 is too loose (does not distinguish datasets with different
+  # rho_NN) - rationale in documentation/2026-09-14_exp8_prop2_check.md.
+  alpha_bound_tau_grid: [0.01, 0.05, 0.1]
+  alpha_bound_tau_default: 0.05
+  bootstrap:
+    # Spearman alpha_bound vs. alpha_star: number of bootstrap repetitions
+    # (resampling datasets with replacement) for a 95% CI, deterministically seeded.
+    n_boot: 5000
+    seed: 20260914
+    ci_level: 0.95
+  quick: {}
+  smoke: {}
+
+# Q1 step 1: figure of tightness_b as a function of alpha, one curve per
+# dataset colored by rho_NN (continuous, Viridis - Okabe-Ito has only 8
+# discrete colors, not enough for 32 datasets). src/figures/fig_prop2_tightness.py.
+fig_prop2_tightness:
+  colormap: "viridis"
+  # datasets labeled by name directly in the figure (the rest is just
+  # color/position in the legend colorbar, so the labels do not overlap -
+  # same convention as fig_regime_map.label_datasets)
+  label_datasets: ["mnist_784", "isolet", "cnae9", "swiss_roll", "iris", "helix", "breast_cancer", "letter"]
+
+# Q1 step 1: figure of alpha_bound (prediction from concentration,
+# Proposition 2) vs. alpha_star (empirical optimum,
+# exp6_alpha_optimum.csv). src/figures/fig_prop2_alpha_prediction.py.
+fig_prop2_alpha_prediction:
+  # which tau value (from exp8_prop2_check.alpha_bound_tau_grid) goes
+  # directly into the main figure - the others remain only in the auxiliary CSV
+  tau_for_figure: 0.05
+
+# Q1 step 3 (reserse/2026-09-14_specifikace_rozsireni_q1.md, PART B) -
+# metric fidelity task with known ground truth: `src/datasets/synthetic_truth.py`
+# (generators for X + truth), `src/sammon/truth_metrics.py` (metrics),
+# `src/experiments/exp9_metric_fidelity.py` (grid of scenario x replicate x
+# method). This task's OWN block (STEP 3) - DOES NOT TOUCH exp8_prop2_check,
+# report.main_methods, or any other block related to STEP 2 (holdout
+# datasets, see reserse specification PART A).
+exp9_metric_fidelity:
+  n_components: 2
+  # R = 20 replicates per scenario (B.2) - the unit of analysis in the statistics (B.5)
+  replicates: 20
+  # S4 "density pair" is exploratory/optional (B.2, B.6: "include only if
+  # the budget allows") - the `make_density_pair` generator is implemented
+  # and tested, but is NOT in the main grid (saves ~1.4 h wall time per B.6,
+  # goal: overall ETA 1.5-2 h for S1-S3).
+  active_scenarios: ["S1", "S2", "S3"]
+  # report.main_methods (13, see config_experiments.yaml:report) + tsne/umap
+  # with fixed parameters (B.4) - OWN list (not a reference to
+  # report.main_methods, same convention as exp1_dr_benchmark.methods,
+  # which is also not a reference).
+  methods:
+    - pca
+    - mds
+    - sammon_alpha0_smacof
+    - sammon_alpha_smacof
+    - sammon_alpha2_smacof
+    - sammon_alpha_auto
+    - sammon_alpha_pred
+    - tsne
+    - tsne_auto
+    - umap
+    - umap_auto
+    - pacmap
+    - trimap
+    - densmap
+    - phate
+  pred_method: "sammon_alpha_pred"
+  # F_B1 (primary, B.5): pred vs. each of these neighborhood methods
+  primary_baselines: ["tsne_auto", "umap_auto", "densmap"]
+  # F_B2 (secondary, B.5)
+  secondary_baselines: ["pacmap", "trimap", "phate"]
+  # F_B3 (exploratory, B.5) - all two-sided/TOST comparisons
+  explorational_vs: ["sammon_alpha0_smacof", "sammon_alpha_auto", "tsne", "umap", "pca", "mds"]
+  # primary metric and direction of improvement per scenario (B.5: S1 LRE_c
+  # min, S2 CPCC_c max, S3 sigma_G min)
+  primary_metric: {S1: "centroid_lre", S2: "cophenetic_pearson", S3: "geodesic_stress_si"}
+  primary_direction: {S1: "min", S2: "max", S3: "min"}
+  # number of deterministically chosen inter-leaf point pairs for
+  # pointwise_ultrametric_spearman (S2, B.2 "over 200000 ... pairs")
+  pointwise_ultrametric_n_pairs: 200000
+  # generative parameters of each scenario (B.2, B.7 item 1) - EXCLUSIVELY
+  # from here, no magic constants in src/datasets/synthetic_truth.py.
+  # `seed_base`: generative seed = seed_base + replicate r (B.2); method
+  # seed = r.
+  scenarios:
+    S1:
+      # "planar clusters" - K clusters in a plane (e1,e2), geometric sequence of sigma
+      K: 8
+      n_k: 200
+      sigma_min: 0.5
+      sigma_max: 2.0
+      center_range: 25.0          # centers ~ U([-center_range,center_range]^2)
+      sep_factor: 4.0             # min. center distance >= sep_factor*(sigma_k+sigma_l)
+      max_separation_attempts: 10000
+      d: 10
+      seed_base: 90100
+      quick: {n_k: 50}
+      smoke: {n_k: 25}
+    S2:
+      # "binary tree clusters" - balanced binary tree of depth `depth`
+      depth: 4
+      n_leaf: 100
+      a1: 16.0                    # level-1 offset (a_l = a1*decay**(l-1))
+      decay: 0.5
+      sigma_leaf: 0.5
+      d: 10
+      seed_base: 90200
+      quick: {n_leaf: 25}
+      smoke: {n_leaf: 13}
+    S3:
+      # "bent sheet" - a developable quarter-cylinder surface, embedded in
+      # R^d via a random orthogonal rotation (Theta_over_pi*pi = the
+      # quarter-cylinder angle)
+      n: 1500
+      S: 3.0
+      H: 1.0
+      Theta_over_pi: 0.5
+      beta_a: 2.0
+      beta_b: 5.0
+      noise: 0.02
+      d: 10
+      seed_base: 90300
+      quick: {n: 375}
+      smoke: {n: 200}
+    S4:
+      # "density pair" (exploratory, NOT in active_scenarios - see above)
+      n1: 150
+      n2: 1350
+      sigma: 1.0
+      center_distance: 20.0
+      d: 10
+      seed_base: 90400
+      quick: {n1: 40, n2: 340}
+      smoke: {n1: 20, n2: 180}
+  quick:
+    replicates: 2
+    methods: ["sammon_alpha0_smacof", "sammon_alpha_pred", "tsne", "umap"]
+  smoke:
+    replicates: 1
+    # methods is NOT given - ALL methods remain (same convention as
+    # exp1_dr_benchmark.smoke: smoke should exercise every code path)
+
+# Q1 step 3 (PART B.5) - statistical protocol of exp9_metric_fidelity_stats.py:
+# families F_B1 (primary, m=9=3 scenarios x 3 primary_baselines), F_B2
+# (secondary, m=9), F_B3 (exploratory, no Holm). Sign-flip permutation test:
+# for replicates<=exact_perm_max_n, full enumeration of the 2**replicates
+# sign vectors (B.5: "full enumeration 2^20=1048576"), otherwise Monte Carlo
+# with n_perm_mc repetitions.
+exp9_metric_fidelity_stats:
+  seed: 20260914
+  alpha_onesided: 0.05
+  n_boot: 10000
+  n_perm_mc: 20000
+  exact_perm_max_n: 22
+
+# Q1 step 3 (B.7 item 5) - gallery: 1 replicate (r=0) x 3 scenarios x
+# selected methods (per the B.4 recommendation: oracle + proposed method +
+# MDS baseline + 3 neighborhood methods that fail otherwise - Wattenberg
+# 2016, Kobak&Berens 2019, Narayan 2021).
+fig_metric_fidelity_gallery:
+  replicate: 0
+  methods: ["oracle_truth", "sammon_alpha_pred", "sammon_alpha0_smacof", "tsne_auto", "umap_auto", "densmap"]
+
+# Q1 step 3 (B.7 item 6) - boxplots of the primary metric over R replicates,
+# method x scenario, horizontal line for oracle_truth (S1/S3; S2 =
+# mds_upper_bound_cpcc).
+fig_metric_fidelity_boxes:
+  methods: ["sammon_alpha0_smacof", "sammon_alpha_smacof", "sammon_alpha2_smacof", "sammon_alpha_auto", "sammon_alpha_pred", "tsne_auto", "umap_auto", "densmap", "pacmap", "trimap", "phate", "pca", "mds"]
+
+# Correlation of embedding quality metrics (fig_metric_correlations.py,
+# 2026-09-16). Reason: Bae, Jeon and Seo (IEEE VIS 2025, DOI
+# 10.1109/VIS60296.2025.00014) show that metrics designed for different
+# aspects of an embedding behave in a correlated way, and choosing a
+# battery of metrics thereby favors certain families of methods. This
+# script measures this on our data (a basis for choosing the columns of the
+# main table, see
+# documentation/2026-09-16_zadani_vyber_metrik_hlavni_tabulka.md).
+fig_metric_correlations:
+  # Candidate metrics. The first eight are the current main table (anchor:
+  # report.main_table_metrics), the rest are further E1 metrics that may
+  # measure the same "direction" - hence included in the correlation analysis.
+  metrics:
+    - auc_rnx
+    - trustworthiness_k7
+    - stress_scale_invariant
+    - q_global
+    - shepard_spearman_rho
+    - class_spread_spearman
+    - centroid_dist_spearman
+    - wall_time_sec
+    - continuity_k7
+    - knn_jaccard_k7
+    - q_local
+    - distance_correlation
+    - lcmc_k7
+    - neighborhood_hit_k7
+    - kruskal_stress1
+  # Metrics for which "more is worse" - the sign is flipped for the
+  # correlation analysis, so all columns have the same orientation (more =
+  # better). Otherwise a pair measuring the same direction would come out
+  # negatively correlated.
+  lower_is_better:
+    - stress_scale_invariant
+    - wall_time_sec
+    - kruskal_stress1
+  # Threshold from which a pair of metrics is considered "practically
+  # interchangeable" (|Spearman rho|); used only for printing and
+  # clustering, not for filtering.
+  redundancy_threshold: 0.9

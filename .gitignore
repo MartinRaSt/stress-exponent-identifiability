@@ -1,0 +1,76 @@
+# Project: Sammon mapping revisited - adaptive weighting, a scalable solver
+#          and a temporal extension (alpha-Sammon)
+# Authors: Martin Radvansky <martin.radvansky@vsb.cz>
+#          Martin Radvansky, Jr. <martin.radvansky1@vsb.cz>
+# Affiliation: Department of Computer Science, Faculty of Electrical Engineering
+#              and Computer Science, VSB - Technical University of Ostrava
+#
+# REPOSITORY POLICY: only SOURCE CODE and documentation are versioned.
+# The repository deliberately excludes:
+#   - all public data (downloaded by the scripts, see README section 4),
+#   - all data the project generates itself (synthetic datasets, caches),
+#   - all results (CSV files, embeddings, tables, figures, logs) - every one of
+#     them is produced by running the code; the archive of the results behind
+#     the published paper lives on Zenodo.
+# Rule of thumb: if running the code can produce it, it does not belong in git.
+
+# --- virtual environment and bytecode ---
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- input data: downloaded as well as generated ---
+# Public datasets are fetched by the scripts (OpenML, UCI, SNAP, SocioPatterns);
+# synthetic datasets are generated from the configuration. Both are reproducible.
+src/data/
+# Exception: the manifest records WHAT is to be downloaded or generated, so it
+# is source, not data.
+!src/data/manifest.json
+
+# --- results (all reproducible by running the experiments) ---
+results/
+
+# --- LaTeX: intermediate files and output PDFs ---
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.spl
+*.toc
+*.lof
+*.lot
+
+# --- working and temporary files ---
+*.bak
+*.bak_*
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- internal material: not for the public repository ---
+# These directories hold working and strategic notes (assessments of acceptance
+# chances, journal selection, validation findings, briefs for agents), the
+# manuscript itself and third-party PDFs.
+documentation/
+podklady/
+podklady_clanek/
+casopisy/
+reserse/
+projectstate.md
+CLAUDE.md
+# The manuscript: the publisher receives an exclusive licence and the repository
+# is cited for the CODE. Figures and generated numbers are outputs anyway.
+clanek/
+# The authors' 2013 conference papers - copyright IEEE, must not be
+# redistributed. README cites them with their DOIs instead.
+konference/
+# Working pipeline outside src/
+pipeline/
