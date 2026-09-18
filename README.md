@@ -337,12 +337,20 @@ Supplement and diagnostics: `fig_alpha_curves`, `fig_alpha_strip`,
   / `run_backup.sh` `[sources|data|both]`.
 - `make_submission.py` — flattens the split `clanek_en/` article tree into
   the single-directory packages required by journal submission systems
-  (e.g. Springer/DAMI): `submission/dami_en/` (main article) and
-  `submission/supplement_en/` (supplement, with its cross-references
-  rewired to the freshly compiled main-article `.aux`). Verifies both
-  packages with a full LaTeX compile against the reference PDFs before
-  declaring success. Launcher: `run_make_submission.bat` /
-  `run_make_submission.sh`. Neither `clanek_en/` nor `submission/` is part
+  (e.g. Springer/DAMI). Each build targets one named journal and lands in
+  `submission/<journal>/`, holding `manuscript_en/` (main article) and
+  `supplement_en/` (supplement, with any cross-references rewired to the
+  freshly compiled main-article `.aux`), plus a `JOURNAL.txt` stamp naming
+  the journal, the submission system and which file belongs in which upload
+  slot. A build into a directory stamped for a different journal is refused
+  rather than silently overwriting it, so a later round aimed elsewhere
+  cannot be confused with this one. Verifies both packages with a full
+  LaTeX compile against the reference PDFs before declaring success, then
+  deletes the compile by-products (`.aux`/`.log`/`.blg`/`.out`) so only
+  sources and the `.bbl` are uploaded. Launcher:
+  `run_make_submission.bat` / `run_make_submission.sh`
+  `[dami|supplement|both] [journal] [output-root]`.
+  Neither `clanek_en/` nor `submission/` is part
   of this repository (see section 1) — this tool is provided so the build
   step is reproducible from the (privately held) article sources.
 
