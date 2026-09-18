@@ -185,6 +185,9 @@ display_labels:
     sammon_alpha_smacof: 'Sammon ($\alpha=1$)'
     sammon_alpha2_smacof: 'Kamada-Kawai ($\alpha=2$)'
     sammon_alpha_auto: '$\alpha$-Sammon (tuned)'
+    # Baseline column of the F_A6 row: the grid optimum, not a method the
+    # benchmark runs - without this the fallback read "$\alpha$ Star".
+    alpha_star: '$\alpha^{\ast}$ (grid optimum)'
     sammon_multiscale: "Sammon (multiscale)"
     sammon_sgd_stab: "Sammon (SGD, stabilized)"
     sammon_sparse_smacof: "Sammon (sparse SMACOF)"
@@ -196,6 +199,29 @@ display_labels:
   # E15 discovery-task question identifiers (exp15_discovery_task_results.csv
   # 'question' column, src/sammon/discovery_task.py::QUESTION_*) - used by
   # fig_discovery_task.py.
+  # E5 ablation table (exp5_factorial_summary): the Factor column carries raw
+  # CSV identifiers; without these labels they would be typeset as "eps D q".
+  factor:
+    init: "Initialization"
+    # Single quotes: in a DOUBLE-quoted YAML scalar "\v" and "\a" are escape
+    # sequences (vertical tab, bell), so the backslash would never reach LaTeX.
+    eps_D_q: '$\varepsilon_{D}$ quantile'
+    alpha: '$\alpha$'
+  # Row-kind column of the regime-stratified table (exp1_regime_stratified)
+  # and the threshold-provenance column of the robustness table (exp14).
+  row_type:
+    method: "Method"
+    paired_diff: "Paired difference"
+  tau_source:
+    config: "Configured"
+    measured_from_exp11: "Measured (Experiment 11)"
+  # Hypothesis column of the pre-registered families table
+  # (exp1_holdout_confirmatory); the rest falls back to word splitting.
+  hypothesis:
+    no_harm: "No harm (TOST)"
+    rule_validation: "Rule validation"
+    pooled_real: "Pooled, real data"
+    pooled_synthetic: "Pooled, synthetic data"
   question:
     nearest_class_pair: "Q1: nearest class pair"
     most_dispersed_class: "Q2: most dispersed class"
@@ -203,6 +229,10 @@ display_labels:
   # prints one of these raw column names)
   metric:
     auc_rnx: "AUC$_{RNX}$"
+    # F_A6 of the pre-registered families table: an agreement between the
+    # predicted exponent and the grid optimum, not a metric of an embedding -
+    # the fallback read "Spearman Alpha Pred Vs Alpha Star".
+    spearman_alpha_pred_vs_alpha_star: 'Spearman $\rho(\alpha_{\text{pred}}, \alpha^{\ast})$'
     trustworthiness_k7: "Trustworthiness (k=7)"
     stress_scale_invariant: "Stress (scale-inv.)"
     q_global: "Q (global)"

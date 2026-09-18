@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.experiments.report_tables import write_booktabs_tex
+from src.experiments.report_tables import _identifier_cell, write_booktabs_tex
 
 _ROW_RE = re.compile(r"^[^%].*\\\\\s*$")
 
@@ -324,14 +324,26 @@ def test_value_labels_default_mapping_applies_to_dataset_and_solver_columns(tmp_
 
 
 def test_value_labels_empty_dict_disables_default_mapping(tmp_path):
-    """Backward compatibility: passing an explicit empty dict restores the
-    old raw-value-with-escaped-underscore rendering for every column."""
+    """An explicit empty dict still disables the display-label lookup, but it
+    no longer brings back literal underscores: since 2026-09-18 (author
+    request - "no underscore may reach a typeset table") the fallback turns
+    them into spaces instead of escaping them, because an underscore in a
+    typeset cell is a leftover from the CSV, not typography."""
     df = pd.DataFrame({"method": ["sammon_alpha_smacof"], "auc_rnx_median": [0.9]})
     out = tmp_path / "t.tex"
     write_booktabs_tex(df, out, caption="cap", label="tab:t", value_labels={})
     text = out.read_text(encoding="utf-8")
-    assert "sammon\\_alpha\\_smacof" in text
+    assert "sammon alpha smacof" in text
+    assert "sammon\\_alpha\\_smacof" not in text
     assert "Sammon ($\\alpha=1$)" not in text
+
+
+def test_identifier_cell_sets_family_names_as_math_subscripts():
+    """F_A1 ... F_A7 are subscripted names, not snake_case identifiers."""
+    assert _identifier_cell("F_A1") == "$F_{A1}$"
+    assert _identifier_cell("F_A7") == "$F_{A7}$"
+    assert _identifier_cell("no_harm") == "no harm"
+    assert _identifier_cell("H1a") == "H1a"
 
 
 def test_value_labels_explicit_mapping_overrides_column_name(tmp_path):

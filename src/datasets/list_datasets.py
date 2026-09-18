@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import pandas as pd
 
 from src.common.config import get_tables_dir
+from src.common.display_labels import display_label
 from src.common.logging_utils import get_logger, wall_clock
 from src.common.progress import progress_iter
 from src.datasets.registry import list_registered_datasets, load_dataset
@@ -84,7 +85,7 @@ def _write_tex_table(df_ok: pd.DataFrame, tex_path: Path) -> None:
     forced to 'other', so `source` is passed RAW (unescaped) here, unlike
     the other text cells - a literal backslash inserted by `_`-escaping
     would render as a visible backslash inside `\\url{}`."""
-    from src.experiments.report_tables import longtable_head_foot
+    from src.experiments.report_tables import escape_latex_label, longtable_head_foot
 
     header_line = "Dataset & $n$ & $d$ & Classes & Type & Std. & Source \\\\"
     head, foot = longtable_head_foot([header_line], n_cols=7)
@@ -100,7 +101,7 @@ def _write_tex_table(df_ok: pd.DataFrame, tex_path: Path) -> None:
     for _, row in df_ok.iterrows():
         d_str = "" if pd.isna(row["d"]) else str(int(row["d"]))
         c_str = "" if pd.isna(row["n_classes"]) else str(int(row["n_classes"]))
-        name = str(row["name"]).replace("_", "\\_")
+        name = escape_latex_label(display_label(str(row["name"]), "dataset"))
         std_str = "yes" if bool(row.get("standardized", False)) else "no"
         lines.append(f"{name} & {int(row['n'])} & {d_str} & {c_str} & {row['kind']} & {std_str} & \\fp{{{row['source']}}} \\\\")
     lines.append("\\end{longtable}")
@@ -112,7 +113,7 @@ def _write_tex_table_brief(df_ok: pd.DataFrame, tex_path: Path) -> None:
     supplement length reduction - see `OUTPUT_TEX_BRIEF_NAME`). Full provenance
     per dataset stays available in `OUTPUT_CSV_NAME`/`OUTPUT_TEX_NAME`; the
     supplement text points readers there."""
-    from src.experiments.report_tables import longtable_head_foot
+    from src.experiments.report_tables import escape_latex_label, longtable_head_foot
 
     header_line = "Dataset & $n$ & $d$ & Classes & Type & Std. \\\\"
     head, foot = longtable_head_foot([header_line], n_cols=6)
@@ -127,7 +128,7 @@ def _write_tex_table_brief(df_ok: pd.DataFrame, tex_path: Path) -> None:
     for _, row in df_ok.iterrows():
         d_str = "" if pd.isna(row["d"]) else str(int(row["d"]))
         c_str = "" if pd.isna(row["n_classes"]) else str(int(row["n_classes"]))
-        name = str(row["name"]).replace("_", "\\_")
+        name = escape_latex_label(display_label(str(row["name"]), "dataset"))
         std_str = "yes" if bool(row.get("standardized", False)) else "no"
         lines.append(f"{name} & {int(row['n'])} & {d_str} & {c_str} & {row['kind']} & {std_str} \\\\")
     lines.append("\\end{longtable}")

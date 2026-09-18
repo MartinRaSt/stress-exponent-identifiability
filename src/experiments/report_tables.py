@@ -281,6 +281,29 @@ def _cell_float_format(col: str, float_format: str | dict[str, str]) -> str:
     return float_format
 
 
+# A machine identifier whose underscore is a SUBSCRIPT, not a word separator:
+# the pre-registered family names F_A1 ... F_A7. Printing them with a literal
+# underscore (the old `str(v).replace("_", "\\_")` fallback) looked like a
+# variable name copied out of the code; they are set as math subscripts.
+_SUBSCRIPT_ID_RE = re.compile(r"^([A-Za-z])_([A-Za-z]?\d+)$")
+
+
+def _identifier_cell(value: str) -> str:
+    """Renders a body cell that has no display-label mapping.
+
+    Author request (2026-09-18): no raw underscore may reach the typeset
+    tables. A name of the F_A1 form becomes a math subscript; any other
+    identifier has its underscores turned into spaces, because an underscore
+    in running text is a leftover from the CSV, not typography.
+    """
+    match = _SUBSCRIPT_ID_RE.match(value)
+    if match:
+        return f"${match.group(1)}_{{{match.group(2)}}}$"
+    if "_" in value:
+        return value.replace("_", " ")
+    return value
+
+
 # --- value_labels: display_label() for table BODY cells --------------------
 #
 # Author feedback 2026-09-18 (third report_tables.py pass): COLUMN_LABELS
@@ -307,6 +330,14 @@ _DEFAULT_VALUE_LABEL_KINDS: dict[str, str] = {
     "Dataset": "dataset",
     "metric": "metric",
     "Metric": "metric",
+    # The hypothesis column of the pre-registered families table carries raw
+    # CSV identifiers (no_harm, rule_validation, pooled_real, ...); without a
+    # kind they would be typeset with literal underscores.
+    "hypothesis_id": "hypothesis",
+    # Factor column of the E5 ablation table (init / eps_D_q / alpha).
+    "factor": "factor",
+    "row_type": "row_type",
+    "tau_source": "tau_source",
     # config_experiments.yaml display_labels has its own 'solver'/'regime'
     # sections (not merged into 'method') - see the config comments next to
     # exp2_solver_scaling/exp4_temporal and exp13_neighbor_survival.
@@ -504,7 +535,7 @@ def write_booktabs_tex(
             elif col in value_label_map:
                 cell = escape_latex_label(display_label(str(v), value_label_map[col]))
             else:
-                cell = str(v).replace("_", "\\_")
+                cell = _identifier_cell(str(v))
             if bold_mask is not None and col in bold_mask.columns and bool(bold_mask[col].iloc[i]):
                 cell = f"\\textbf{{{cell}}}"
             cells.append(cell)

@@ -215,6 +215,18 @@ def _write_booktabs_tex(df: pd.DataFrame, out_path: Path, caption: str, label: s
     cols = ["family", "hypothesis_id", "metric", "method_b",
             "n", "median_diff", "p_perm", "p_holm", "reject_holm"]
     cols = [c for c in cols if c in df.columns]
+    # On the F_A4 and F_A5 rows `hypothesis_id` is literally the value of
+    # `metric` resp. `method_b`, so the typeset table named the same thing
+    # twice per row - and, after the display labels were applied, named it
+    # twice DIFFERENTLY ("Stress Scale Invariant" next to "Stress
+    # (scale-inv.)"). The cell is blanked where it duplicates a neighbour;
+    # the hypothesis is then fully described by Metric + Baseline.
+    df = df.copy()
+    duplicate = pd.Series(False, index=df.index)
+    for other in ("metric", "method_b"):
+        if other in df.columns:
+            duplicate |= df["hypothesis_id"].astype(str) == df[other].astype(str)
+    df.loc[duplicate, "hypothesis_id"] = ""
     write_booktabs_tex(
         df[cols], out_path, caption=caption, label=label,
         comment_lines=["source: results/tables/exp1_holdout_confirmatory.csv, "
@@ -416,8 +428,8 @@ def main() -> None:
     table.to_csv(out_csv, index=False)
     _write_booktabs_tex(
         table, tables_dir / "exp1_holdout_confirmatory.tex",
-        "Pre-registered hypothesis families F\\_A1-F\\_A7 over the low-$\\rho_{NN}$ datasets. "
-        "F\\_A1 is the primary test on the pooled sample, F\\_A2 the secondary test on the hold-out subset alone, F\\_A3-F\\_A7 are exploratory. "
+        "Pre-registered hypothesis families $F_{A1}$--$F_{A7}$ over the low-$\\rho_{NN}$ datasets. "
+        "$F_{A1}$ is the primary test on the pooled sample, $F_{A2}$ the secondary test on the hold-out subset alone, $F_{A3}$--$F_{A7}$ are exploratory. "
         "The tested method is always the tuning-free rule; the Holm correction is applied within each family.",
         "tab:exp1_holdout_confirmatory",
     )

@@ -320,7 +320,7 @@ def main() -> None:
     table.to_csv(out_csv, index=False)
     write_booktabs_tex(
         table, tables_dir / "exp1_regime_stratified.tex",
-        caption="AUC$_{RNX}$/stress stratified by distance-concentration regime (E1, median $\\pm$ IQR over datasets; paired diffs of alpha\\_pred vs. fixed alpha, Wilcoxon signed-rank)",
+        caption="AUC$_{RNX}$/stress stratified by distance-concentration regime (E1, median $\\pm$ IQR over datasets; paired differences of $\\alpha_{\\text{pred}}$ vs. fixed $\\alpha$, Wilcoxon signed-rank)",
         label="tab:exp1_regime_stratified",
         comment_lines=["source: results/data/exp1_dr_benchmark_results.csv + dataset_properties.csv + alpha_pred_rule.json, see exp1_regime_stratified.py"],
         # long format, one row per (regime, method, metric) -> too tall for one

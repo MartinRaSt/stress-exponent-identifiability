@@ -345,8 +345,8 @@ def _table_caption(df: pd.DataFrame) -> str:
     p_perm = float(df["spearman_ceiling_vs_gain_p"].iloc[0])
     return (
         "E14: robustness of the exp10 identifiability claims to the exp11-measured "
-        "SMACOF convergence residual (rows filtered to |Delta|>=tau and "
-        "|Delta\\_prime|>=tau; tau=0 reproduces exp10 exactly). Every row is taken "
+        "SMACOF convergence residual (rows filtered to $|\\Delta_\\alpha|\\ge\\tau$ and "
+        "$|\\Delta'_\\alpha|\\ge\\tau$; $\\tau=0$ reproduces exp10 exactly). Every row is taken "
         f"out of {n_total} (dataset, alpha>0) rows in total, and the permutation "
         f"p-value of the ceiling-vs-gain correlation sits at its floor {p_perm:.0e} "
         "on every row."
