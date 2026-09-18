@@ -32,11 +32,27 @@ the code is kept under version control.
 | Figures and the macro file of the paper | Generated from the results | `src/make_figures.*`, `src/run_export_numbers.*` |
 | Virtual environment (`venv/`) | Installed from `requirements.txt` | Section 3 |
 
-The manuscript itself is not part of this repository. Two scripts nevertheless
-write outputs meant for it: `make_figures` copies the final PDF figures and
-`export_numbers` writes the LaTeX macro file with every number quoted in the
-paper. Both create the target directory (`clanek/`, Czech for *article*) on
-demand next to `results/`; you can delete it if you only need the results.
+The manuscript itself is not part of this repository — the publisher receives
+an exclusive licence for the text and the repository is cited for the CODE
+that produced it. Two scripts nevertheless write outputs meant for it:
+`make_figures` copies the final PDF figures and `export_numbers` writes the
+LaTeX macro file with every number quoted in the paper. Both create the
+target directory (`clanek/`, Czech draft; `clanek_en/`, the English
+translation used for submission) on demand next to `results/`; you can
+delete either if you only need the results. The internal pre-submission
+review rounds (`review_cz_*/`) and working/strategic notes (`documentation/`,
+`podklady/`, `reserse/`, `projectstate.md`) are likewise excluded — they are
+Czech-language working material, not a deliverable.
+
+**Reproducibility rule that governs this whole repository:** every number,
+table and figure quoted in the paper is produced by a script in this
+repository from data, never typed in by hand. `export_numbers.py` writes
+every number as a LaTeX macro with a comment recording its source
+(experiment, CSV, computation); `report_tables.py` and `src/figures/fig_*.py`
+do the same for tables and figures, always writing a CSV with the plotted
+data next to the figure PDF. A missing input is a bug to fix, not a reason to
+substitute a placeholder or illustrative value ("fail loud, never fabricate
+data" — the same rule enforced for dataset downloads in section 4).
 
 An archive of the data and results in exactly the state that produced the
 published version of the paper is deposited on Zenodo (see the data availability
@@ -177,7 +193,7 @@ src/
   methods/      adapters that put every compared method behind one interface
   sammon/       the proposed method: stress, weights, solvers, alpha selection, metrics
     solvers/    pseudo-Newton, SMACOF, SGD, sparse
-  experiments/  experiments E0-E9 and the analyses over their results
+  experiments/  experiments E0-E15 and the analyses over their results
   figures/      one script per figure of the paper
   tools/        helpers (runtime estimation)
   run_*.bat / run_*.sh   launchers
@@ -246,6 +262,8 @@ proposed method). `hyperparam_selection.py` provides fairly tuned baselines
 | `temporal_metrics.py` | Stability and quality of dynamic embeddings |
 | `truth_metrics.py` | Metric fidelity against a known latent ground truth |
 | `prop2_check.py` | The numerical part of the empirical test of Proposition 2 |
+| `identifiability.py` | Pure numerical functions for the stress-exponent identifiability check (E10): Lemma 2/Theorem 1 identity and bound, Propositions 3/4, Theorem 2 dual certificate, Theorem 3 local quadratic index |
+| `discovery_task.py` | The two downstream discovery questions of E15 (nearest class pair, most dispersed class), evaluated from a distance matrix |
 | `device.py` | CPU/CUDA selection and the largest `n` that fits in GPU memory |
 
 ### 5.5 `src/experiments/` — experiments
@@ -267,6 +285,12 @@ proposed method). `hyperparam_selection.py` provides fairly tuned baselines
 | E7 | `exp7_rank_weights.py` | Rank-based instead of distance-based weights (a negative result) |
 | E8 | `exp8_prop2_check.py` | Empirical test of Proposition 2 over the stored embeddings |
 | E9 | `exp9_metric_fidelity.py` | Metric fidelity against a known ground truth |
+| E10 | `exp10_identifiability_check.py` / `exp10_identifiability_stats.py` | Numerical verification of the stress-exponent identifiability theory (Lemma 2, Propositions 3/4, Theorems 1-3) over the E6/E8 embeddings, no new DR run |
+| E11 | `exp11_convergence_check.py` | Diagnoses the E10 non-negativity violations: under-converged embedding vs. genuinely different SMACOF local minimum |
+| E12 | `exp12_alpha_grid_extension.py` | Extends the E6 alpha grid past `alpha=3` for datasets whose optimum sat on the grid boundary |
+| E13 | `exp13_neighbor_survival.py` | Plain-language companion metric: how many of the k nearest neighbours survive projection to 2D |
+| E14 | `exp14_convergence_robustness.py` | Robustness of the E10 conclusions to a convergence-driven filtering threshold `tau` |
+| E15 | `exp15_discovery_task.py` / `exp15_discovery_task_stats.py` | Downstream discovery task (nearest-class-pair / most-dispersed-class) over the already-saved E1 embeddings, McNemar/Wilcoxon per dataset |
 
 Analyses and helpers: `dataset_properties.py` (properties of the inputs,
 including distance concentration), `fit_alpha_rule.py` (derivation of the
@@ -282,23 +306,51 @@ result CSVs).
 
 One script per figure. A CSV with the plotted data is written next to every PDF.
 Output is vector PDF (`pdf.fonttype=42`) with colourblind-safe palettes
-(Okabe–Ito); the shared setup lives in `fig_common.py`.
+(Okabe–Ito); the shared setup lives in `fig_common.py`, which re-exports the
+identifier → human-readable label conversion from `src/common/display_labels.py`
+(the single place that maps raw config/CSV identifiers such as `tsne_auto` or
+`nn_ratio_k1` to the labels used in figures and LaTeX tables alike).
 
 Main text: `fig_faithful_map`, `fig_pareto_front`, `fig_regime_map`,
 `fig_alpha_gain_by_regime`, `fig_graph_layouts`, `fig_temporal_pareto`,
-`fig_metric_fidelity_boxes`.
+`fig_metric_fidelity_boxes`, `fig_neighborhood_problem` (flagship figure:
+MDS vs. tuned alpha-Sammon vs. t-SNE on the same probe point),
+`fig_neighbor_survival`, `fig_discovery_task` (E15).
 Supplement and diagnostics: `fig_alpha_curves`, `fig_alpha_strip`,
 `fig_before_after`, `fig_cd_diagram`, `fig_gallery_methods`,
 `fig_graph_layouts_all`, `fig_holdout_paired`, `fig_metric_correlations`,
 `fig_metric_fidelity_gallery`, `fig_prop2_alpha_prediction`,
 `fig_prop2_tightness`, `fig_rnx_curves`, `fig_runtime_scaling`,
-`fig_sammon_demo`, `fig_sgd_convergence`, `fig_temporal_trajectories`.
+`fig_sammon_demo`, `fig_sgd_convergence`, `fig_temporal_trajectories`,
+`fig_identifiability_law` (E10, local quadratic law of Theorem 3).
 
 ### 5.7 `src/tools/`
 
-`estimate_runtime_from_csv.py` — estimates how long a full run will take from
-the measured `wall_time_sec` values of a previous run (a scheduling simulation
-for N workers).
+- `estimate_runtime_from_csv.py` — estimates how long a full run will take
+  from the measured `wall_time_sec` values of a previous run (a scheduling
+  simulation for N workers).
+- `make_backup.py` — writes two dated zip archives next to the project
+  directory: `sources` (code, article text, SVG figure sources, docs, git
+  history) and `data` (the measured experiment CSVs under `results/data/`
+  only). Never archives anything a script can regenerate (figures, tables,
+  PDFs, embeddings, the dataset cache, `venv/`). Launchers: `run_backup.bat`
+  / `run_backup.sh` `[sources|data|both]`.
+- `make_submission.py` — flattens the split `clanek_en/` article tree into
+  the single-directory packages required by journal submission systems
+  (e.g. Springer/DAMI): `submission/dami_en/` (main article) and
+  `submission/supplement_en/` (supplement, with its cross-references
+  rewired to the freshly compiled main-article `.aux`). Verifies both
+  packages with a full LaTeX compile against the reference PDFs before
+  declaring success. Launcher: `run_make_submission.bat` /
+  `run_make_submission.sh`. Neither `clanek_en/` nor `submission/` is part
+  of this repository (see section 1) — this tool is provided so the build
+  step is reproducible from the (privately held) article sources.
+
+`src/validate_supplement_refs.py` is a related pre-submission check: it
+verifies that every `\supref{N}`/`\suprefs{N}{M}` in the main text points at
+a section that actually exists in the supplement, and prints the title of
+the target section next to each reference for a human sanity check. Also not
+runnable without the (unpublished) `clanek/` sources.
 
 ---
 
@@ -346,11 +398,40 @@ src\run_estimate_runtime.bat exp4_temporal "1,8,12"
 4. `src\run_fit_alpha_rule.bat full` — derives the prediction rule for alpha.
 5. `src\run_exp1_holdout_confirmatory.bat full` — confirmatory test on the
    hold-out set.
-6. `src\run_main.bat full` — statistics, tables, figures and the macro file with
+6. Theory/robustness/discovery follow-ups (mode `full`, each independent):
+   `run_exp10_identifiability_check` + `run_exp10_identifiability_stats`,
+   `run_exp11_convergence_check`, `run_exp12_alpha_grid_extension`,
+   `run_exp13_neighbor_survival`, `run_exp14_convergence_robustness`,
+   `run_exp15_discovery_task` + `run_exp15_discovery_task_stats`.
+7. `src\run_main.bat full` — statistics, tables, figures and the macro file with
    every number quoted in the paper.
 
 Chains of several phases are provided by `run_s1_all`, `run_s2_all` and
 `run_all_experiments`.
+
+### 6.2 Compiling and translating the article
+
+The manuscript sources (`clanek/`, the Czech working draft; `clanek_en/`, the
+English translation used for submission) are not part of this repository
+(section 1), so this subsection only documents the workflow for whoever holds
+those sources locally:
+
+- Each of `clanek/` and `clanek_en/` has its own `compile.bat` / `compile.sh`
+  (`pdflatex` + `bibtex`, MiKTeX on the `PATH`), run from inside the
+  directory.
+- Translation from `clanek/` (Czech) to `clanek_en/` (English) is a manual
+  section-by-section pass, not a script — only the LaTeX macros/labels and
+  the figures are shared (via `clanek/generated/`, `clanek/img/`), so the two
+  trees stay independently compilable.
+- `src\run_validate_supplement_refs.bat` (`src/validate_supplement_refs.py`)
+  checks, before submission, that every `\supref{N}`/`\suprefs{N}{M}` in the
+  main text points at a supplement section that actually exists, printing
+  the target section's title for a human sanity check.
+- `src\run_make_submission.bat` (`src/tools/make_submission.py`) flattens the
+  split `clanek_en/` tree into the single-directory packages required by the
+  target journal's submission system and verifies both with a full LaTeX
+  compile before writing them to `submission/` (also not part of this
+  repository).
 
 ---
 

@@ -28,7 +28,7 @@ import pandas as pd
 
 from src.common.checkpoint import RunKey, load_embedding
 from src.experiments.exp_common import resolve_experiment_name
-from src.figures.fig_common import OKABE_ITO, WIDTH_SINGLE_COL_IN, add_quick_arg, parse_fig_mode, require_experiment_csv, save_csv_alongside, save_figure
+from src.figures.fig_common import OKABE_ITO, WIDTH_SINGLE_COL_IN, add_quick_arg, display_label, parse_fig_mode, require_experiment_csv, save_csv_alongside, save_figure
 
 FIG_NAME = "fig_rnx_curves"
 BASE_EXPERIMENT_NAME = "exp1_dr_benchmark"
@@ -79,14 +79,14 @@ def main() -> None:
         rnx = _rnx_curve(Q, n)
         ks = np.arange(1, len(rnx) + 1)
         auc = float(row["auc_rnx"])
-        ax.plot(ks, rnx, label=f"{method_name} (AUC={auc:.3f})", color=OKABE_ITO[i % len(OKABE_ITO)], linewidth=1.0)
+        ax.plot(ks, rnx, label=f"{display_label(method_name, 'method')} (AUC={auc:.3f})", color=OKABE_ITO[i % len(OKABE_ITO)], linewidth=1.0)
         for k, r in zip(ks, rnx):
             csv_rows.append({"dataset": dataset_name, "method": method_name, "seed": seed, "K": int(k), "R_NX": r})
 
     ax.set_xscale("log")
     ax.set_xlabel("K")
-    ax.set_ylabel("R_NX(K)")
-    ax.set_title(f"Co-ranking R_NX(K): {dataset_name} (seed={seed})", fontsize=8)
+    ax.set_ylabel("$R_{NX}(K)$")
+    ax.set_title(f"Co-ranking $R_{{NX}}(K)$: {display_label(dataset_name, 'dataset')} (seed={seed})", fontsize=8)
     ax.legend(fontsize=5.5, ncol=1)
     fig.tight_layout()
     save_figure(fig, FIG_NAME)

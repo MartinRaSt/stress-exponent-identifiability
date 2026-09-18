@@ -58,7 +58,9 @@ import matplotlib.pyplot as plt
 from src.experiments.config_experiments import load_experiments_config
 from src.figures.fig_common import (
     OKABE_ITO,
+    WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
+    display_label,
     figures_out_dir,
     parse_fig_mode,
     require_experiment_csv,
@@ -184,23 +186,47 @@ def _long_form(rho: pd.DataFrame, n_used: pd.DataFrame, family: str) -> pd.DataF
     return pd.DataFrame(rows)
 
 
-def _heatmap(ax, rho: pd.DataFrame, title: str) -> None:
+def _heatmap(ax, rho: pd.DataFrame, title: str, annotate_threshold: float, show_xticklabels: bool) -> None:
     """A single correlation map. A diverging scale centered at zero (RdBu_r
-    is colorblind-safe for a two-color gradient)."""
+    is colorblind-safe for a two-color gradient).
+
+    2026-09-17 fix (author: "cisla v bunkach jsou peklo" - 3x14x14=588
+    printed numbers were illegible): the per-cell numeric value now carries
+    no information the color scale doesn't already show, so it is printed
+    ONLY where it is analytically interesting, i.e. |rho| >= the SAME
+    `redundancy_threshold` used elsewhere in this script to flag
+    practically-interchangeable metric pairs (no separate magic number) -
+    every other value is still exactly recoverable from the CSV saved
+    alongside this figure. Tick labels go through the shared
+    `display_label(..., "metric")` so no raw column name reaches the axis.
+
+    Author feedback 2026-09-17 ("one X axis is enough for the correlations"): all three
+    panels share the same metric order on x, so the x tick labels are only
+    drawn on the BOTTOM panel (`show_xticklabels`); the caller still keeps
+    the ticks themselves (just no labels) so gridlines/positions line up."""
     data = rho.to_numpy(dtype=float)
-    im = ax.imshow(data, vmin=-1.0, vmax=1.0, cmap="RdBu_r")
+    # aspect="auto": a correlation matrix has no natural "equal aspect"
+    # geometry - stretching it to fill the full-width panel (instead of
+    # imshow's default square aspect, which left ~60% of the full-width
+    # canvas blank when the 3 panels were stacked vertically) gives much
+    # larger, more legible cells for the same figure width.
+    im = ax.imshow(data, vmin=-1.0, vmax=1.0, cmap="RdBu_r", aspect="auto")
+    labels = [display_label(m, "metric") for m in rho.columns]
     ax.set_xticks(range(len(rho)))
     ax.set_yticks(range(len(rho)))
-    ax.set_xticklabels(rho.columns, rotation=90, fontsize=5)
-    ax.set_yticklabels(rho.index, fontsize=5)
-    ax.set_title(title, fontsize=7)
+    if show_xticklabels:
+        ax.set_xticklabels(labels, rotation=90, fontsize=5.5)
+    else:
+        ax.set_xticklabels([])
+    ax.set_yticklabels(labels, fontsize=5.5)
+    ax.set_title(title, fontsize=7.5)
     for i in range(len(rho)):
         for j in range(len(rho)):
             value = data[i, j]
-            if np.isnan(value):
+            if np.isnan(value) or abs(value) < annotate_threshold:
                 continue
             ax.text(j, i, f"{value:.2f}".replace("0.", "."), ha="center", va="center",
-                    fontsize=3.6, color="white" if abs(value) > 0.6 else "black")
+                    fontsize=4.2, color="white" if abs(value) > 0.6 else "black")
     return im
 
 
@@ -242,10 +268,22 @@ def main() -> None:
     )
     clusters_df = pd.concat(clusters_frames, ignore_index=True)
 
-    fig, axes = plt.subplots(1, 3, figsize=(7.5, 3.0), constrained_layout=True)
+    # 2026-09-17 fix (author: "tri matice vedle sebe, naprosto necitelne"):
+    # the three 14x14 matrices are now stacked ONE PER ROW (instead of side
+    # by side) - each panel gets the full figure width, giving the 14
+    # human-readable metric labels (display_label) enough room to stay
+    # legible, and a single shared colorbar on the right.
+    # sharex: all three panels use the SAME metric order on x, so x tick
+    # labels are only drawn once, on the bottom panel (author feedback
+    # 2026-09-17: "korelace staci jen jedna osa X" - repeating them 3x
+    # wasted vertical space the article needs elsewhere).
+    fig, axes = plt.subplots(
+        3, 1, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.85), constrained_layout=True, sharex=True,
+    )
     titles = {"all": "All methods", "stress": "Stress family", "neighbor": "Neighbour methods"}
-    for ax, family in zip(axes, ["all", "stress", "neighbor"]):
-        im = _heatmap(ax, matrices[family], titles[family])
+    family_order = ["all", "stress", "neighbor"]
+    for i, (ax, family) in enumerate(zip(axes, family_order)):
+        im = _heatmap(ax, matrices[family], titles[family], threshold, show_xticklabels=(i == len(family_order) - 1))
     fig.colorbar(im, ax=axes, shrink=0.8, label="Spearman rho (oriented: higher = better)")
 
     csv_path = save_csv_alongside(long_df, FIG_NAME)

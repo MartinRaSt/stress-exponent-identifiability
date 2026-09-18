@@ -51,6 +51,7 @@ from src.figures.fig_common import (
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
+    display_label,
     parse_fig_mode,
     require_experiment_csv,
     save_csv_alongside,
@@ -101,7 +102,7 @@ def _plot_twin_panel(
     ax_stress.fill_between(stress["alpha"], stress["q25"], stress["q75"], color=_COLOR_STRESS, alpha=0.15, linewidth=0, zorder=1, rasterized=True)
     ax_stress.tick_params(axis="y", labelcolor=_COLOR_STRESS, labelsize=tick_labelsize)
 
-    ax_auc.set_title(dataset_name, fontsize=title_fontsize)
+    ax_auc.set_title(display_label(dataset_name, "dataset"), fontsize=title_fontsize)
     if show_ylabel:
         ax_auc.set_ylabel("AUC$_{RNX}$", color=_COLOR_AUC, fontsize=ylabel_fontsize)
 

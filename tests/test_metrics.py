@@ -11,8 +11,9 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
-from src.sammon.metrics import evaluate
+from src.sammon.metrics import evaluate, knn_jaccard, knn_overlap_count
 
 
 def _sample_points(n: int = 200, seed: int = 0) -> np.ndarray:
@@ -146,3 +147,69 @@ def test_cluster_geometry_nan_below_three_classes() -> None:
 
     res_no_y = evaluate(X, X, None, "vector", extended=True)
     assert np.isnan(res_no_y["centroid_dist_spearman"])
+
+
+# ============================================================================
+# knn_overlap_count (documentation/2026-09-17_zadani_exp13_preziti_sousedu.md)
+# ============================================================================
+
+
+def test_knn_overlap_count_is_k_for_identical_order() -> None:
+    """Identical neighbor order in both spaces -> every point keeps all k neighbors."""
+    order = np.array([[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]])
+    assert knn_overlap_count(order, order, k=3) == 3.0
+
+
+def test_knn_overlap_count_is_zero_for_disjoint_neighbors() -> None:
+    """For n=5, split each point's 4 possible neighbors into two disjoint
+    halves of size k=2 - by construction the original and embedded k-NN
+    sets never intersect, so the mean overlap count must be exactly 0."""
+    n = 5
+    order_orig = np.empty((n, 2), dtype=np.int64)
+    order_emb = np.empty((n, 2), dtype=np.int64)
+    for i in range(n):
+        others = [j for j in range(n) if j != i]
+        order_orig[i] = others[:2]
+        order_emb[i] = others[2:]
+    assert knn_overlap_count(order_orig, order_emb, k=2) == 0.0
+
+
+def test_knn_overlap_count_rejects_out_of_range_k() -> None:
+    order = np.array([[1, 2], [0, 2], [0, 1]])
+    try:
+        knn_overlap_count(order, order, k=0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for k=0")
+    try:
+        knn_overlap_count(order, order, k=3)  # n-1 = 2, so k=3 is out of range
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for k > n-1")
+
+
+def test_knn_overlap_count_differs_from_mean_jaccard_conversion() -> None:
+    """THE TRAP this metric exists to avoid (see module docstring of
+    `knn_overlap_count` and the task note): converting the MEAN Jaccard back
+    to a neighbor count via the single-point identity m = 2*k*J/(1+J) is
+    WRONG once points have different per-point Jaccard values - that
+    identity only holds for one point at a time, and m(J) is concave, so by
+    Jensen's inequality f(mean(J)) >= mean(f(J)) whenever the J(i) differ.
+
+    n=3, k=1: point 0 has a perfect match (J=1, count=1), points 1 and 2
+    have no match at all (J=0, count=0 each) - so the TRUE mean count is
+    1/3, but "converting" the mean Jaccard (1/3) via m=2*k*J/(1+J) gives 0.5,
+    a materially different (and wrong) number."""
+    order_orig = np.array([[1], [0], [0]])
+    order_emb = np.array([[1], [2], [1]])
+
+    direct_mean_count = knn_overlap_count(order_orig, order_emb, k=1)
+    mean_jaccard = knn_jaccard(order_orig, order_emb, k=1)
+    wrong_conversion = 2.0 * 1 * mean_jaccard / (1.0 + mean_jaccard)
+
+    assert direct_mean_count == pytest.approx(1.0 / 3.0)
+    assert mean_jaccard == pytest.approx(1.0 / 3.0)
+    assert wrong_conversion == pytest.approx(0.5)
+    assert not np.isclose(direct_mean_count, wrong_conversion)

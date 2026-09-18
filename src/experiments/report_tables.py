@@ -39,6 +39,7 @@ table is skipped with a WARNING (never fabricated), other tables are still creat
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,7 @@ from scipy.stats import rankdata
 
 from src.common.checkpoint import results_csv_path
 from src.common.config import get_mode_path, get_tables_dir
+from src.common.display_labels import display_label, kind_labels
 from src.experiments.config_experiments import load_experiments_config
 from src.experiments.exp_common import resolve_experiment_name
 from src.experiments.stats import run_stats_for_experiment
@@ -74,35 +76,459 @@ EXP5_MERGE_KEYS = ["dataset", "alpha", "eps_D_q", "seed"]
 
 _STATUS_OK = "ok"
 
+# Short typeset labels for CSV column names, so the table HEADER does not
+# dictate the column width instead of the data (2026-09-18 width fix, see
+# documentation for the natural-width measurements that triggered this).
+# Looked up both by the exact column name (e.g. a bare metric column such as
+# `stress_scale_invariant` in exp13) and, if that fails, by the column name
+# with a trailing `_median`/`_avg_rank` suffix stripped (e.g.
+# `auc_rnx_median` -> `auc_rnx` -> "AUC\textsubscript{RNX}"). NEVER use `_`
+# or a math-mode subscript (`$..._{...}$`) here - the supplement includes
+# these files with `\catcode`_=12`, which would break math mode.
+#
+# 2026-09-18 second pass (author feedback: a raw `col\_name` header is one
+# unbreakable LaTeX word, so it stays wide even with a `_`->` ` replacement
+# alone): the actual name->label mapping moved OUT of this module into
+# `config_experiments.yaml` `display_labels.column` - the SAME one shared
+# lookup point (`src/common/display_labels.py`) used for method/dataset/
+# metric/solver/regime everywhere else in the project, rather than a
+# private dict that only this file knew about. `_column_labels()` below is
+# just a thin cached accessor for the exact-match section (needed by the
+# compositional affix logic in `_column_label`, which must tell "no
+# curated label for this base" apart from "a curated label that happens to
+# be short" - `display_label` itself cannot answer that, since it always
+# returns SOME string via `_fallback_label`).
+def _column_labels() -> dict[str, str]:
+    return kind_labels("column")
+
+
+# Suffix affixes resolved by `_column_label`: `<base><suffix>` -> `<base
+# label><annotation>` (bare base label when the annotation is None, e.g. a
+# `_median` suffix - the caption already states "median over ..."). Checked
+# ONLY if `<base>` itself is a curated `display_labels.column` entry
+# (`_column_labels()`), longest-specific first is not required since all
+# patches are mutually exclusive endings.
+_SUFFIX_ANNOTATIONS: dict[str, str | None] = {
+    "_median": None,
+    "_avg_rank": "rank",
+    "_iqr": "(IQR)",
+    "_mean": "(mean)",
+    "_rho": "$\\rho$",
+    "_p": "$p$",
+    "_n": "$n$",
+}
+
+# Same affixes, but written as a PREFIX in the CSV (e.g. `avg_rank_auc_rnx`,
+# `iqr_auc_rnx` in exp5_factorial_summary - one row per factor level, so the
+# stat type is a prefix, not a suffix like in the per-method tables).
+_PREFIX_ANNOTATIONS: dict[str, str | None] = {
+    "median_": None,
+    "avg_rank_": "rank",
+    "iqr_": "(IQR)",
+    "mean_": "(mean)",
+}
+
+# Prefixes composed as "<word> <base label>" (e.g. `auc_at_alpha0` ->
+# "AUC at $\alpha{=}0$") rather than as a trailing annotation.
+_COMPOUND_PREFIXES: dict[str, str] = {
+    "auc_at_": "AUC at",
+    "stress_at_": "Stress at",
+}
+
+
+def _column_label(col: str) -> str:
+    """Short typeset label for a column: exact `display_labels.column`
+    match first (see `_column_labels`), then a recognized prefix/suffix
+    affix around a base metric that IS a curated `column` entry
+    (`_COMPOUND_PREFIXES` composes "<word> <base>", `_SUFFIX_ANNOTATIONS`/
+    `_PREFIX_ANNOTATIONS` append a short annotation after the base label,
+    or return the bare base label when the affix is purely descriptive,
+    e.g. `_median`) - a base with NO curated entry leaves the whole column
+    name unresolved (no partial affix stripping). Falling all the way
+    through goes to `display_label(col, "column")` (2026-09-18 fallback fix:
+    underscores become SPACES via `_fallback_label`'s word split, e.g.
+    `totally_unknown_metric` -> "Totally Unknown Metric" - a raw
+    `col\\_name` with an ESCAPED but still bare underscore, the previous
+    fallback, is one unbreakable LaTeX word and defeats the header word-wrap
+    in `_wrap_header_label`). The final return value always goes through
+    `escape_latex_label` - a safety net, not a behaviour change for any
+    existing curated entry (all already use braced math subscripts)."""
+    labels = _column_labels()
+    if col in labels:
+        return escape_latex_label(labels[col])
+    for prefix, word in _COMPOUND_PREFIXES.items():
+        if col.startswith(prefix):
+            base = col[len(prefix):]
+            if base in labels:
+                return escape_latex_label(f"{word} {labels[base]}")
+    for suffix, annotation in _SUFFIX_ANNOTATIONS.items():
+        if col.endswith(suffix):
+            base = col[: -len(suffix)]
+            if base in labels:
+                return escape_latex_label(labels[base] if annotation is None else f"{labels[base]} {annotation}")
+    for prefix, annotation in _PREFIX_ANNOTATIONS.items():
+        if col.startswith(prefix):
+            base = col[len(prefix):]
+            if base in labels:
+                return escape_latex_label(labels[base] if annotation is None else f"{labels[base]} {annotation}")
+    return escape_latex_label(display_label(col, "column"))
+
+
+def _detect_median_rank_pairs(cols: list[str]) -> list[tuple[str, ...]]:
+    """Groups columns for the header: an adjacent `<metric>_median` followed
+    by `<metric>_avg_rank` becomes one 2-column group (spanned header cell +
+    'med.'/'rank' sub-header); every other column is its own 1-column group."""
+    groups: list[tuple[str, ...]] = []
+    i = 0
+    while i < len(cols):
+        c = cols[i]
+        if c.endswith("_median") and i + 1 < len(cols):
+            base = c[: -len("_median")]
+            if cols[i + 1] == f"{base}_avg_rank":
+                groups.append((c, cols[i + 1]))
+                i += 2
+                continue
+        groups.append((c,))
+        i += 1
+    return groups
+
+
+# A `$...$` math span (kept as ONE atomic token, even if it has an internal
+# space, e.g. 'Both gaps $\ge 0$') or a run of non-space characters -
+# see `_wrap_header_label`.
+_HEADER_TOKEN_RE = re.compile(r"\$[^$]*\$|\S+")
+
+
+def _table_header_max_line_chars() -> int:
+    """`report.table_header_max_line_chars` (config_experiments.yaml) - no
+    magic number in `_wrap_header_label`."""
+    return int(load_experiments_config()["report"]["table_header_max_line_chars"])
+
+
+def _wrap_header_label(label: str) -> str:
+    """Greedy word-wrap of an already-short, already-escaped column LABEL
+    (from `_column_label`) into a `\\thead{...}` cell, so a multi-word label
+    breaks onto several lines INSTEAD OF forcing a plain `l`/`r` tabular
+    column wide - neither alignment wraps text on its own (author feedback
+    2026-09-18: a raw `col\\_name\\_with\\_underscores` header used to be ONE
+    unbreakable LaTeX word, widening the column even when every data cell
+    below it was short). Tokens are `$...$` math spans (always kept whole -
+    splitting one, e.g. 'Both gaps $\\ge 0$', would leave an unbalanced `$`
+    on each resulting line) or whitespace-separated words; a single token
+    LONGER than the line-length budget is never split further (so a
+    macro-heavy label with no space at all, e.g. 'AUC\\textsubscript{RNX}',
+    always stays on ONE line - counting LaTeX SOURCE characters is a crude
+    proxy for rendered width, and breaking a macro mid-token would corrupt
+    it). Returns the bare `label` UNWRAPPED (no `\\thead`) when it already
+    fits on a single line, so every existing short header renders exactly
+    as before this fix (`\\thead` centers by default, which would visually
+    change a currently left/right-set single-line header)."""
+    max_chars = _table_header_max_line_chars()
+    tokens = _HEADER_TOKEN_RE.findall(label)
+    if not tokens:
+        return label
+    lines: list[str] = [tokens[0]]
+    for tok in tokens[1:]:
+        candidate = f"{lines[-1]} {tok}"
+        if len(candidate) <= max_chars:
+            lines[-1] = candidate
+        else:
+            lines.append(tok)
+    if len(lines) == 1:
+        return label
+    return "\\thead{" + "\\\\".join(lines) + "}"
+
+
+def _header_lines(cols: list[str]) -> list[str]:
+    """Header rows for the tabular body: a plain one-line header, or - when
+    `<metric>_median`/`<metric>_avg_rank` pairs are present - a two-row
+    booktabs header (`\\multicolumn`/`\\cmidrule` over the metric name, then
+    'med.'/'rank'), so a long metric name is printed once, not twice. Every
+    cell is passed through `_wrap_header_label` (requires the `makecell`
+    package for `\\thead`, see the article/supplement preambles) so a
+    multi-word label wraps onto several lines instead of widening the
+    column (2026-09-18 header width fix, see `_wrap_header_label`)."""
+    groups = _detect_median_rank_pairs(cols)
+    if not any(len(g) == 2 for g in groups):
+        return [" & ".join(_wrap_header_label(_column_label(c)) for c in cols) + " \\\\"]
+    row1, cmidrules, row2 = [], [], []
+    col_idx = 1  # 1-based LaTeX column index
+    for g in groups:
+        if len(g) == 2:
+            label = _wrap_header_label(_column_label(g[0]))
+            row1.append(f"\\multicolumn{{2}}{{c}}{{{label}}}")
+            cmidrules.append(f"\\cmidrule(lr){{{col_idx}-{col_idx + 1}}}")
+            row2 += ["med.", "rank"]
+            col_idx += 2
+        else:
+            row1.append(_wrap_header_label(_column_label(g[0])))
+            row2.append("")
+            col_idx += 1
+    return [" & ".join(row1) + " \\\\", " ".join(cmidrules), " & ".join(row2) + " \\\\"]
+
+
+def _cell_float_format(col: str, float_format: str | dict[str, str]) -> str:
+    """Resolves the printf-style float format for one column: an explicit
+    per-column entry in a `float_format` dict wins, then `_avg_rank` columns
+    always get 2 decimals (a rank's 4th decimal is meaningless and only
+    widens the table), then the dict's `__default__` or the plain string."""
+    if isinstance(float_format, dict) and col in float_format:
+        return float_format[col]
+    if col.endswith("_avg_rank"):
+        return "%.2f"
+    if isinstance(float_format, dict):
+        return float_format.get("__default__", "%.4f")
+    return float_format
+
+
+# --- value_labels: display_label() for table BODY cells --------------------
+#
+# Author feedback 2026-09-18 (third report_tables.py pass): COLUMN_LABELS
+# already fixed the HEADER (e.g. "method" -> "Method"), but table BODIES
+# still printed raw identifiers with underscores (e.g. "tsne\_auto",
+# "sammon\_alpha\_smacof" in the `method` column). Values must go through
+# the SAME `display_label` used by every figure script - otherwise a method
+# name in a table and in a figure could disagree.
+
+# Default column-name -> display_label `kind` mapping, applied automatically
+# when `write_booktabs_tex(..., value_labels=...)` is omitted (None). A
+# column not listed here is left exactly as before (only a bare `_` is
+# escaped) - this only covers the identifier-like columns the author pointed
+# at (method/dataset/metric/solver/regime). Pass `value_labels={}` to turn
+# this off entirely, or an explicit dict to override it.
+_DEFAULT_VALUE_LABEL_KINDS: dict[str, str] = {
+    "method": "method",
+    "method_name": "method",
+    "Method": "method",
+    "dataset": "dataset",
+    "dataset_name": "dataset",
+    "Dataset": "dataset",
+    "metric": "metric",
+    "Metric": "metric",
+    # config_experiments.yaml display_labels has its own 'solver'/'regime'
+    # sections (not merged into 'method') - see the config comments next to
+    # exp2_solver_scaling/exp4_temporal and exp13_neighbor_survival.
+    "solver": "solver",
+    "Solver": "solver",
+    "regime": "regime",
+    "Regime": "regime",
+}
+
+
+def _resolve_value_labels(cols: list[str], value_labels: dict[str, str] | None) -> dict[str, str]:
+    """`None` (parameter omitted) -> auto-derive from `_DEFAULT_VALUE_LABEL_KINDS`
+    restricted to columns actually present; an explicit dict (including `{}`,
+    which disables the feature) is used verbatim."""
+    if value_labels is not None:
+        return dict(value_labels)
+    return {c: kind for c, kind in _DEFAULT_VALUE_LABEL_KINDS.items() if c in cols}
+
+
+# Unicode Greek letters that appear (as LaTeX commands, not raw glyphs) in
+# display_labels config values - the ONLY non-ASCII characters permitted to
+# reach `escape_latex_label`. Any other non-ASCII character is a config
+# error (fail loud, see `escape_latex_label`) rather than a silently mangled
+# table cell.
+# Built from `chr(codepoint)`, not a literal glyph, so this source file
+# itself stays plain ASCII (project rule: no Unicode special characters in code).
+_GREEK_UNICODE_TO_LATEX: dict[str, str] = {
+    chr(0x03B1): r"\alpha",  # GREEK SMALL LETTER ALPHA
+    chr(0x03C1): r"\rho",  # GREEK SMALL LETTER RHO
+    chr(0x03B5): r"\varepsilon",  # GREEK SMALL LETTER EPSILON
+    chr(0x03BB): r"\lambda",  # GREEK SMALL LETTER LAMBDA
+    chr(0x03C4): r"\tau",  # GREEK SMALL LETTER TAU
+}
+
+# A bare '_' inside a $...$ math segment that is NOT immediately followed by
+# '{' (i.e. an unbraced single-character subscript like "$x_y$") - forbidden
+# by project convention (use a braced subscript "$x_{y}$" or \textsubscript{}
+# outside math instead), so a stray one is caught here rather than silently
+# reproduced.
+_BARE_MATH_SUBSCRIPT_RE = re.compile(r"_(?!\{)")
+
+
+def _convert_non_ascii_for_latex(text: str, *, in_math: bool, label: str) -> str:
+    """Replaces a known Greek-letter Unicode character with its LaTeX macro
+    (wrapped in `$...$` if `text` is currently OUTSIDE math mode); any other
+    non-ASCII character raises - fail loud, no silent replacement/drop."""
+    out = []
+    for ch in text:
+        if ord(ch) < 128:
+            out.append(ch)
+            continue
+        macro = _GREEK_UNICODE_TO_LATEX.get(ch)
+        if macro is None:
+            raise ValueError(
+                f"Non-ASCII character {ch!r} (U+{ord(ch):04X}) in display label {label!r} has no "
+                "known LaTeX equivalent - add it to _GREEK_UNICODE_TO_LATEX in report_tables.py, "
+                "or fix config_experiments.yaml display_labels (no raw non-ASCII text may reach a "
+                "generated .tex file)."
+            )
+        out.append(macro if in_math else f"${macro}$")
+    return "".join(out)
+
+
+def escape_latex_label(label: str) -> str:
+    """Makes a `display_label()` result safe to write literally into a
+    booktabs `.tex` table cell (the file is `\\input`-ed with `\\catcode`_=12`):
+      - splits `label` on `$` into alternating text/math segments (an odd
+        number of `$` is itself an error - unbalanced math mode);
+      - in TEXT segments: escapes `_`, `&`, `%`, `#` to their LaTeX-safe
+        form, and converts a known Unicode Greek letter into `$\\<name>$`;
+      - in MATH segments (already valid LaTeX, e.g. 'AUC$_{RNX}$' or
+        'Sammon ($\\alpha=1$)' straight from config_experiments.yaml
+        display_labels): left as-is, EXCEPT a bare (unbraced) `_` subscript
+        raises (see `_BARE_MATH_SUBSCRIPT_RE`), and a Unicode Greek letter is
+        converted to its bare LaTeX macro (no extra `$` - already in math).
+    Any other non-ASCII character raises (fail loud - config content that
+    cannot be typeset must be caught immediately, not silently mangled)."""
+    if label.count("$") % 2 != 0:
+        raise ValueError(f"Display label {label!r} has an unbalanced number of '$' - cannot make it LaTeX-safe.")
+    parts = label.split("$")
+    out_parts = []
+    for i, part in enumerate(parts):
+        in_math = i % 2 == 1
+        part = _convert_non_ascii_for_latex(part, in_math=in_math, label=label)
+        if in_math:
+            if _BARE_MATH_SUBSCRIPT_RE.search(part):
+                raise ValueError(
+                    f"Display label {label!r} contains a math-mode subscript with a bare '_' not "
+                    "followed by '{' (e.g. \"$x_y$\") - use a braced subscript (\"$x_{y}$\") or "
+                    "\\textsubscript{} outside math mode instead."
+                )
+            out_parts.append(part)
+        else:
+            for ch, escaped in (("_", "\\_"), ("&", "\\&"), ("%", "\\%"), ("#", "\\#")):
+                part = part.replace(ch, escaped)
+            out_parts.append(part)
+    return "$".join(out_parts)
+
+
+def longtable_head_foot(header_lines: list[str], n_cols: int) -> tuple[str, str]:
+    """Repeating head/foot boilerplate for a `longtable` (booktabs rules +
+    'continued' notes on every page break) - shared by `write_booktabs_tex`
+    (`long_table=True`) and `src/datasets/list_datasets.py` (a small
+    hand-written table that does not go through `write_booktabs_tex`'s
+    CSV-column-driven header/body machinery, but still needs the same
+    multi-page glue).
+
+    2026-09-18 supplement page-overflow fix (author report: 6 tables in
+    BOTH supplement language versions were taller than \\textheight, so
+    `table`+`tabular`+`\\resizebox` silently pushed rows off the visible
+    page - "Float too large", data present in the PDF but never rendered).
+    `longtable` breaks a table across pages instead of failing to place a
+    too-tall float, at the cost of NOT supporting `\\resizebox` (a `longtable`
+    cannot be captured into a box, since its entire point is to interrupt
+    itself at page breaks) - reserved for tables identified by the CALLER as
+    inherently long (e.g. one row per dataset), never auto-detected from a
+    row-count threshold (a threshold would silently flip behaviour again as
+    the dataset count grows)."""
+    head = ["\\toprule", *header_lines, "\\endfirsthead",
+            f"\\multicolumn{{{n_cols}}}{{c}}{{\\small\\itshape (continued from previous page)}} \\\\",
+            "\\toprule", *header_lines, "\\endhead"]
+    foot = ["\\midrule", f"\\multicolumn{{{n_cols}}}{{r}}{{\\small\\itshape continued on next page}} \\\\",
+            "\\endfoot", "\\bottomrule", "\\endlastfoot"]
+    return "\n".join(head), "\n".join(foot)
+
 
 def write_booktabs_tex(
-    df: pd.DataFrame, out_path: Path, caption: str, label: str, float_format: str = "%.4f",
+    df: pd.DataFrame, out_path: Path, caption: str, label: str, float_format: str | dict[str, str] = "%.4f",
     comment_lines: list[str] | None = None, bold_mask: pd.DataFrame | None = None,
+    drop_constant_cols: list[str] | None = None, value_labels: dict[str, str] | None = None,
+    long_table: bool = False,
 ) -> None:
     """Writes a booktabs LaTeX table (\\input-able). `comment_lines` are
     inserted as `%` comments below the header (provenance, notes),
-    `bold_mask` (same shape as df, bool) highlights the best values."""
-    cols = list(df.columns)
+    `bold_mask` (same shape/columns as df, bool) highlights the best values.
+    `float_format` is either a single printf-style string (applied to all
+    float columns, kept for backward compatibility) or a dict of per-column
+    overrides (with an optional `__default__` fallback); `_avg_rank` columns
+    are always rendered with 2 decimals regardless of `float_format`.
+    The column header uses `display_labels.column` (config_experiments.yaml,
+    short `_`-free labels, see `_column_label`) instead of the raw CSV
+    column name, word-wrapped into a multi-row `\\thead{...}` cell when it
+    does not fit on one line (`_wrap_header_label`, needs the `makecell`
+    package), so the header never dictates the table width, and
+    `<metric>_median`/`<metric>_avg_rank` pairs share one spanned header
+    cell (see `_header_lines`).
+    `drop_constant_cols`: column names (e.g. a run-status record's
+    `experiment`/`status`/`error`) that are OMITTED from the LaTeX table -
+    but NEVER from the CSV, which this function does not touch - when the
+    column has exactly one distinct value across ALL rows (`nunique`,
+    NaN-aware, so an all-empty/all-'--' column also counts as constant).
+    A column that is NOT constant (e.g. `error` actually has a message in
+    some row) is NEVER dropped - fail-loud: a real error must stay visible.
+    `value_labels`: `{column_name: display_label_kind}` - a string CELL in
+    that column is rendered via `display_label(value, kind)` (the SAME
+    lookup every figure script uses, see `src/common/display_labels.py`),
+    LaTeX-escaped with `escape_latex_label`, instead of the raw CSV value
+    with only its `_` escaped. `None` (the default) auto-derives this from
+    the column NAME via `_DEFAULT_VALUE_LABEL_KINDS` (covers `method`/
+    `dataset`/`metric`/`solver`/`regime` and common case variants) - so a
+    table with a `method`/`dataset`/... column gets human-readable cells
+    with NO call-site change required. Pass `value_labels={}` to disable
+    this entirely and keep the old raw-value-with-escaped-underscore
+    rendering for every column.
+    `long_table`: emit a `longtable` (package `longtable`, already loaded by
+    both `clanek(_en)/main.tex` and `clanek(_en)/supplement/supplement.tex`)
+    instead of `table`+`tabular`, so a table with many rows breaks across
+    pages (repeating the header) instead of overflowing a single page -
+    "Float too large for page" (2026-09-18 fix, see `longtable_head_foot`).
+    Set by the CALLER for tables that are inherently long by nature (one row
+    per dataset/regime, growing with the data) - NEVER auto-detected from
+    the row count. INCOMPATIBLE with the supplement's `\\rawtableinput`/
+    `\\rawtableinputwide` `\\resizebox` mechanism (a `longtable` cannot be
+    captured into an `\\lrbox`); call sites that need extra width for a
+    `long_table=True` output use `\\rawtableinputlong`/`\\rawtableinputlongwide`
+    instead (landscape + a smaller font set by the caller, no rescaling)."""
+    drop: set[str] = set()
+    for c in drop_constant_cols or []:
+        if c in df.columns and df[c].nunique(dropna=False) <= 1:
+            drop.add(c)
+    cols = [c for c in df.columns if c not in drop]
+    value_label_map = _resolve_value_labels(cols, value_labels)
+    colspec = "".join("r" if pd.api.types.is_numeric_dtype(df[c]) else "l" for c in cols)
     lines = ["% auto-generated by src/main.py (src/experiments/report_tables.py) - do not edit by hand"]
     for c in comment_lines or []:
         lines.append(f"% {c}")
-    lines += [
-        "\\begin{table}[htbp]", "\\centering", f"\\caption{{{caption}}}", f"\\label{{{label}}}",
-        f"\\begin{{tabular}}{{{'l' * len(cols)}}}", "\\toprule",
-        " & ".join(c.replace("_", "\\_") for c in cols) + " \\\\", "\\midrule",
-    ]
+    header_lines = _header_lines(cols)
+    body_lines: list[str] = []
     for i, (_, row) in enumerate(df.iterrows()):
         cells = []
-        for j, v in enumerate(row):
+        for col in cols:
+            v = row[col]
             if isinstance(v, (float, np.floating)):
-                cell = "--" if not np.isfinite(v) else float_format % v
+                cell = "--" if not np.isfinite(v) else _cell_float_format(col, float_format) % v
+            elif col in value_label_map:
+                cell = escape_latex_label(display_label(str(v), value_label_map[col]))
             else:
                 cell = str(v).replace("_", "\\_")
-            if bold_mask is not None and bool(bold_mask.iloc[i, j]):
+            if bold_mask is not None and col in bold_mask.columns and bool(bold_mask[col].iloc[i]):
                 cell = f"\\textbf{{{cell}}}"
             cells.append(cell)
-        lines.append(" & ".join(cells) + " \\\\")
-    lines += ["\\bottomrule", "\\end{tabular}", "\\end{table}"]
+        body_lines.append(" & ".join(cells) + " \\\\")
+    if long_table:
+        head, foot = longtable_head_foot(header_lines, len(cols))
+        # `\endfoot`/`\endlastfoot` (inside `foot`) MUST be declared BEFORE the
+        # body rows - longtable reads everything between `\endhead` and
+        # `\endfoot` as the repeating page FOOTER template (not body content),
+        # so foot-after-body silently swallowed nearly all body rows into the
+        # footer instead of typesetting them (2026-09-18 bugfix: this is what
+        # actually caused the blank/near-empty landscape pages, NOT a
+        # longtable/lscape/booktabs incompatibility - confirmed by a minimal
+        # reproduction with the correct order, which rendered fine).
+        lines += [f"\\begin{{longtable}}{{{colspec}}}", f"\\caption{{{caption}}}\\label{{{label}}}\\\\", head, foot]
+        lines += body_lines
+        lines += ["\\end{longtable}"]
+    else:
+        lines += [
+            "\\begin{table}[htbp]", "\\centering", f"\\caption{{{caption}}}", f"\\label{{{label}}}",
+            f"\\begin{{tabular}}{{{colspec}}}", "\\toprule",
+        ]
+        lines += header_lines
+        lines.append("\\midrule")
+        lines += body_lines
+        lines += ["\\bottomrule", "\\end{tabular}", "\\end{table}"]
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -168,10 +594,19 @@ def _best_mask(df: pd.DataFrame, metrics: dict[str, str]) -> pd.DataFrame:
     return mask
 
 
-def _table_columns(metrics: dict[str, str], df: pd.DataFrame) -> list[str]:
+def _table_columns(metrics: dict[str, str], df: pd.DataFrame,
+                   with_avg_rank: bool = True) -> list[str]:
+    """Median (and optionally average-rank) column per metric, in config order.
+
+    `with_avg_rank=False` halves the column count. Used for the E1 table,
+    whose 16 columns did not fit the supplement page: the per-metric average
+    ranks are not cited anywhere in the text, and for the primary metrics
+    they are shown in the critical-difference diagrams and the stats tables.
+    """
+    suffixes = ("_median", "_avg_rank") if with_avg_rank else ("_median",)
     cols = []
     for metric in metrics:
-        for suffix in ("_median", "_avg_rank"):
+        for suffix in suffixes:
             if f"{metric}{suffix}" in df.columns:
                 cols.append(f"{metric}{suffix}")
     return cols
@@ -225,7 +660,9 @@ def write_exp1_main_table(mode: str, logger) -> Path | None:
     if order_col is not None:
         summary = summary.sort_values(order_col)
     table = summary.reset_index().rename(columns={"index": "method"})
-    cols = ["method"] + _table_columns(metrics, table)
+    # E1 table: medians only (see _table_columns) - with the rank columns it
+    # was 16 columns wide and fell below the supplement legibility floor.
+    cols = ["method"] + _table_columns(metrics, table, with_avg_rank=False)
     table = table[cols]
 
     tables_dir = get_tables_dir(mode)
@@ -328,6 +765,9 @@ def write_exp3_group_tables(mode: str, logger) -> Path | None:
             "distance = methods over the distance matrix (unit = graph x distance), native = graph layouts (unit = graph)",
             "avg_rank = average rank within a unit among methods with a value (methods with 'skipped_max_n' on large graphs do not exclude the unit); *_avg_rank_complete in the CSV = complete blocks only (Friedman)",
         ],
+        # 4 groups (kind x size_group) x up to ~10 methods each -> taller than
+        # one supplement page at scriptsize/landscape (2026-09-18 overflow fix).
+        long_table=True,
     )
     logger.info("E3 group table written: %s (%d rows, threshold=%d).", out_csv, table.shape[0], threshold)
     return out_csv

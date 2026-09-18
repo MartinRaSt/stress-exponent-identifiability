@@ -28,16 +28,28 @@ spread IN THE OUTPUT (Y), to show the preservation/distortion of relative
 cluster size (see K2/R3 class_spread_lie_factor - same motivation, here
 visual).
 
-Below each panel: centroid_dist_spearman, class_spread_spearman
+Below each panel: a compact "fidelity strip" (3 horizontal bars, longer =
+better) for centroid_dist_spearman, class_spread_spearman
 (results/data/exp1_cluster_geometry_results.csv, K2) and
 stress_scale_invariant (results/data/exp1_dr_benchmark_results.csv), all
-for the same (dataset, method, seed).
+for the same (dataset, method, seed) - see `_corr_to_fidelity`/
+`_stress_to_fidelity` for the [0, 1] "longer bar = better" normalization
+(the two rank correlations are in [-1, 1] and stress is an unbounded cost,
+so raw values are not directly comparable as bar lengths without it). The
+raw value is always printed next to the bar so nothing is hidden by the
+normalization.
 
 Optional overlay: point transparency = local stress residual
 r_i = sum_j (D_ij - d_ij)^2 / sum_j D_ij^2 (w_ij=1, i.e. alpha=0
 weighting, D = the input distance matrix on the same subsample as E1, d =
 the Euclidean distance in the output Y WITHOUT optimal scaling s* - see
 the K10 task spec formula).
+
+2026-09-17 revision (shorten+strengthen the article): added the classical
+alpha=1 Sammon column (`sammon_alpha_smacof`, see the config comment) and
+switched all column/row headers from raw config keys to human-readable
+labels (now via the SHARED `display_labels.method`/`dataset` section +
+`src.figures.fig_common.display_label`, used by every figure script).
 
 Run: venv\\python.exe -m src.figures.fig_faithful_map [--quick|--full|--smoke]
 """
@@ -61,6 +73,7 @@ from src.figures.fig_common import (
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
+    display_label,
     figures_out_dir,
     parse_fig_mode,
     require_experiment_csv,
@@ -116,6 +129,71 @@ def _local_stress_residual(D: np.ndarray, Y: np.ndarray) -> np.ndarray:
     return r
 
 
+# Fidelity-strip style constants (pure styling, not analysis parameters -
+# see fig_faithful_map.stress_bar_max in config_experiments.yaml for the one
+# value that DOES affect the analysis, the stress normalization cap).
+_FIDELITY_BAR_COLOR = "#0072B2"   # OKABE_ITO[5] (blue)
+_FIDELITY_TRACK_COLOR = "#d9d9d9"
+_FIDELITY_ROW_LABELS = ["Centroid", "Spread", "Stress"]
+_FIDELITY_XLIM = (0.0, 1.38)  # room for the raw-value text past the bar end
+
+
+def _corr_to_fidelity(rho: float) -> float:
+    """Maps a Spearman rank correlation in [-1, 1] ("higher = better
+    preservation") to a [0, 1] bar length ("longer = better"), via
+    (rho + 1) / 2. NaN in, NaN out (never fabricated)."""
+    if not np.isfinite(rho):
+        return float("nan")
+    return float(np.clip((rho + 1.0) / 2.0, 0.0, 1.0))
+
+
+def _stress_to_fidelity(stress: float, stress_max: float) -> float:
+    """Maps stress_scale_invariant (an unbounded cost, "lower = better") to
+    a [0, 1] bar length ("longer = better"), via 1 - stress / stress_max,
+    clipped to [0, 1] at stress_max (config `fig_faithful_map.stress_bar_max`
+    - any stress above the cap just shows a zero-length bar, the raw value
+    printed next to it still shows the true number). NaN in, NaN out."""
+    if not np.isfinite(stress) or stress_max <= 0:
+        return float("nan")
+    return float(np.clip(1.0 - stress / stress_max, 0.0, 1.0))
+
+
+def _draw_fidelity_strip(ax, centroid_rho: float, spread_rho: float, stress: float, stress_max: float, show_row_labels: bool) -> None:
+    """Draws the 3-bar "fidelity strip" (Centroid rank corr., Spread rank
+    corr., Stress) below one scatter panel: a light-gray full-length track
+    (the [0, 1] normalized scale) plus a colored bar of the normalized
+    fidelity, with the RAW metric value printed as text past the bar end
+    (see `_corr_to_fidelity`/`_stress_to_fidelity` - a missing/NaN metric
+    draws only the track and an "n/a" label, never a fabricated bar)."""
+    raw_values = [centroid_rho, spread_rho, stress]
+    fidelities = [
+        _corr_to_fidelity(centroid_rho),
+        _corr_to_fidelity(spread_rho),
+        _stress_to_fidelity(stress, stress_max),
+    ]
+    y_positions = [2, 1, 0]
+    for y, raw, fidelity in zip(y_positions, raw_values, fidelities):
+        ax.barh(y, 1.0, height=0.62, color=_FIDELITY_TRACK_COLOR, linewidth=0, zorder=1)
+        if np.isfinite(fidelity):
+            ax.barh(y, fidelity, height=0.62, color=_FIDELITY_BAR_COLOR, linewidth=0, zorder=2)
+            text = f"{raw:.2f}" if abs(raw) < 10 else f"{raw:.3g}"
+        else:
+            text = "n/a"
+        ax.text(1.05, y, text, va="center", ha="left", fontsize=4.3, zorder=3)
+
+    ax.set_xlim(*_FIDELITY_XLIM)
+    ax.set_ylim(-0.65, 2.65)
+    ax.set_xticks([])
+    if show_row_labels:
+        ax.set_yticks(y_positions)
+        ax.set_yticklabels(_FIDELITY_ROW_LABELS, fontsize=4.6)
+        ax.tick_params(axis="y", length=0, pad=1.5)
+    else:
+        ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+
 def _load_input_distance(dataset_name: str, n_max_overrides: dict, n_max_default: int) -> tuple[np.ndarray, np.ndarray | None]:
     """Load + subsample a dataset EXACTLY like E1 (SUBSAMPLE_SEED) and
     return (D, y) - D is the (n x n) Euclidean distance matrix of X (all
@@ -146,10 +224,16 @@ def main() -> None:
     fm_cfg = load_experiments_config()["fig_faithful_map"]
     datasets: list[str] = fm_cfg["datasets"]
     methods: list[str] = fm_cfg["methods"]
+    # Column/row labels come from the shared display_labels.method/dataset
+    # section (src.figures.fig_common.display_label) - see the config
+    # comment in fig_faithful_map (2026-09-17 merge).
+    method_labels: dict[str, str] = {m: display_label(m, "method") for m in methods}
+    dataset_labels: dict[str, str] = {d: display_label(d, "dataset") for d in datasets}
     seed = int(fm_cfg["seed"])
     ellipse_n_std = float(fm_cfg["ellipse_n_std"])
     csv_max_points = int(fm_cfg["csv_max_points_per_panel"])
     csv_seed = int(fm_cfg["csv_subsample_seed"])
+    stress_bar_max = float(fm_cfg["stress_bar_max"])
 
     EXPERIMENT_NAME = resolve_experiment_name(BASE_EXPERIMENT_NAME, mode)
     e1_df = require_experiment_csv(BASE_EXPERIMENT_NAME, mode)
@@ -163,7 +247,17 @@ def main() -> None:
     n_max_default = int(e1_cfg["n_max"])
 
     n_rows, n_cols = len(datasets), len(methods)
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN / n_cols * n_rows * 1.18), squeeze=False)
+    panel_width_in = WIDTH_FULL_WIDTH_IN / n_cols
+    # each dataset row = a scatter panel (height ratio 3) + its fidelity
+    # strip (height ratio 1) - see _draw_fidelity_strip; the 1.42 factor
+    # leaves just enough room for column titles, the row-label ylabel and
+    # the inter-row spacing (outer_gs hspace below). Explicit margins
+    # (left/right/top/bottom) are used INSTEAD of fig.tight_layout(), which
+    # does not lay out subgridspec children correctly (large stray
+    # whitespace, verified visually - see the task's PDF-inspection
+    # requirement).
+    fig = plt.figure(figsize=(WIDTH_FULL_WIDTH_IN, panel_width_in * n_rows * 1.15))
+    outer_gs = fig.add_gridspec(n_rows, n_cols, left=0.055, right=0.99, top=0.88, bottom=0.06, hspace=0.12, wspace=0.15)
 
     rng_csv = np.random.default_rng(csv_seed)
     csv_rows = []
@@ -174,15 +268,19 @@ def main() -> None:
         color_map = _class_color_map(y) if y is not None else None
 
         for j, method_name in enumerate(methods):
-            ax = axes[i][j]
+            inner_gs = outer_gs[i, j].subgridspec(2, 1, height_ratios=[3, 1], hspace=0.12)
+            ax = fig.add_subplot(inner_gs[0])
+            ax_m = fig.add_subplot(inner_gs[1])
             try:
                 Y = load_embedding(RunKey(EXPERIMENT_NAME, dataset_name, method_name, seed))
             except FileNotFoundError:
                 ax.axis("off")
+                ax_m.axis("off")
                 missing_panels.append((dataset_name, method_name))
                 continue
             if Y.shape[0] != D_in.shape[0]:
                 ax.axis("off")
+                ax_m.axis("off")
                 missing_panels.append((dataset_name, method_name))
                 continue
 
@@ -213,34 +311,40 @@ def main() -> None:
             for spine in ax.spines.values():
                 spine.set_linewidth(0.4)
             if i == 0:
-                ax.set_title(method_name, fontsize=7)
+                ax.set_title(method_labels[method_name], fontsize=6.8)
             if j == 0:
-                ax.set_ylabel(dataset_name, fontsize=7)
+                ax.set_ylabel(dataset_labels[dataset_name], fontsize=6.8)
 
             row_geom = geometry_ok[(geometry_ok["dataset"] == dataset_name) & (geometry_ok["method"] == method_name)]
             row_e1 = e1_ok[(e1_ok["dataset"] == dataset_name) & (e1_ok["method"] == method_name)]
             cds = float(row_geom["centroid_dist_spearman"].iloc[0]) if not row_geom.empty else float("nan")
             css = float(row_geom["class_spread_spearman"].iloc[0]) if not row_geom.empty else float("nan")
             stress = float(row_e1["stress_scale_invariant"].iloc[0]) if not row_e1.empty else float("nan")
-            ax.text(
-                0.5, -0.12, f"centroid={cds:.2f}  spread={css:.2f}  stress={stress:.3f}",
-                transform=ax.transAxes, ha="center", va="top", fontsize=5,
-            )
+            _draw_fidelity_strip(ax_m, cds, css, stress, stress_bar_max, show_row_labels=(j == 0))
 
             n_points = Y.shape[0]
             take = min(csv_max_points, n_points)
             idx_csv = np.sort(rng_csv.choice(n_points, size=take, replace=False)) if take < n_points else np.arange(n_points)
             for k in idx_csv:
                 csv_rows.append({
-                    "dataset": dataset_name, "method": method_name, "seed": seed, "point_index": int(k),
+                    "dataset": dataset_name, "dataset_label": dataset_labels[dataset_name],
+                    "method": method_name, "method_label": method_labels[method_name],
+                    "seed": seed, "point_index": int(k),
                     "y0": float(Y[k, 0]), "y1": float(Y[k, 1]),
                     "label": (y[k] if y is not None else ""),
                     "local_stress_residual": float(residual[k]) if np.isfinite(residual[k]) else "",
                     "centroid_dist_spearman": cds, "class_spread_spearman": css, "stress_scale_invariant": stress,
+                    "centroid_fidelity": _corr_to_fidelity(cds), "spread_fidelity": _corr_to_fidelity(css),
+                    "stress_fidelity": _stress_to_fidelity(stress, stress_bar_max),
                 })
 
-    fig.suptitle("Faithful map: class geometry preservation across methods (E1, seed=%d)" % seed, fontsize=8)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.suptitle("Faithful map: class geometry preservation across methods (E1, seed=%d)" % seed, fontsize=8, y=0.985)
+    fig.text(
+        0.5, 0.012,
+        "Fidelity bars (Centroid, Spread: Spearman rank corr.; Stress: scale-invariant, capped at "
+        f"{stress_bar_max:g}) - longer bar = more faithful; raw value printed next to each bar.",
+        ha="center", va="bottom", fontsize=5.6,
+    )
     save_figure(fig, FIG_NAME)
     save_csv_alongside(pd.DataFrame(csv_rows), FIG_NAME)
 

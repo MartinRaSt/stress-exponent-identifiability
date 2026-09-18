@@ -56,6 +56,7 @@ from src.common.checkpoint import results_csv_path
 from src.common.config import ensure_dir, get_mode_path
 from src.common.logging_utils import get_logger
 from src.experiments.config_experiments import resolve_experiment_config
+from src.common.display_labels import display_label
 from src.experiments.exp_common import parse_mode_args, resolve_experiment_name
 
 BASE_EXPERIMENT_NAME = "exp9_metric_fidelity"
@@ -294,6 +295,14 @@ def compute_stats(df: pd.DataFrame, cfg: dict[str, Any], stats_cfg: dict[str, An
     return out[STATS_COLUMNS]
 
 
+
+def _method_cell(method: str) -> str:
+    """Method name for a LaTeX cell: the SAME display label every figure and
+    table uses (src/common/display_labels.py). Without it the raw identifier
+    (e.g. "tsne_auto") would reach the .tex with an UNESCAPED underscore.
+    """
+    return display_label(method, "method")
+
 def _write_tex_summary(stats_df: pd.DataFrame, out_dir, logger) -> None:
     """B.7 item 4: a simple booktabs table of the median primary metric per
     scenario/method (F_B1+F_B2 rows) with significance marks after Holm."""
@@ -304,13 +313,13 @@ def _write_tex_summary(stats_df: pd.DataFrame, out_dir, logger) -> None:
         "% AUTO-GENERATED: src/experiments/exp9_metric_fidelity_stats.py - DO NOT EDIT BY HAND.",
         "\\begin{tabular}{llrrrrl}",
         "\\toprule",
-        "scenario & method B & median $\\Delta$ & delta\\_pair & Cliff $\\delta$ & $p_{\\mathrm{Holm}}$ & significance \\\\",
+        "scenario & method B & median $\\Delta$ & $\\delta_{\\mathrm{pair}}$ & Cliff $\\delta$ & $p_{\\mathrm{Holm}}$ & significance \\\\",
         "\\midrule",
     ]
     for _, r in stats_df[stats_df["role"].isin(["primary", "secondary"])].iterrows():
         sig = "*" if r["reject_holm"] else ""
         lines.append(
-            f"{r['scenario']} & {r['method_b']} & {r['median_diff']:.4f} & {r['delta_pair']:.3f} & "
+            f"{r['scenario']} & {_method_cell(r['method_b'])} & {r['median_diff']:.4f} & {r['delta_pair']:.3f} & "
             f"{r['cliff_delta']:.3f} & {r['p_holm']:.4g} & {sig} \\\\"
         )
     lines += ["\\bottomrule", "\\end{tabular}"]

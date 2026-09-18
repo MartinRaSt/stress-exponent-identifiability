@@ -80,6 +80,132 @@ def bootstrap_spearman_ci(
     return {"rho": float(rho), "pvalue": float(pvalue), "ci_lo": ci_lo, "ci_hi": ci_hi, "n": int(n)}
 
 
+def spearman_permutation_test(
+    x: np.ndarray, y: np.ndarray, n_perm: int, seed: int, alternative: str = "two-sided",
+) -> dict[str, float]:
+    """Spearman rho + a PERMUTATION p-value (label-permutation of y, `n_perm`
+    resamples, seeded), used instead of scipy's asymptotic p-value where the
+    unit count (datasets) is small (reserse/2026-09-17_zostreni_propozice2.md
+    section 7.2/10, H1: 'Spearman s permutacni p-hodnotou, 10^4 permutaci,
+    seed z configu'). NaN pairs are dropped BEFORE permuting (same
+    convention as `bootstrap_spearman_ci`).
+
+    Vectorized: all `n_perm` permutations of rank(y) are generated at once
+    (an (n_perm x n) index matrix) and correlated against the fixed rank(x)
+    via the closed-form Pearson-on-ranks formula (Spearman rho = Pearson
+    correlation of the ranks) - avoids a Python-level loop over n_perm calls
+    to `scipy.stats.spearmanr`.
+
+    p = (count+1)/(n_perm+1) (conservative convention, matches
+    `src.experiments.stats_holdout.mc_sign_flip_pvalue`). Returns
+    {'rho', 'pvalue', 'n'}; n<3 -> rho=pvalue=NaN (undefined)."""
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    if x.shape != y.shape:
+        raise ValueError(f"x and y must have the same shape, got {x.shape} and {y.shape}.")
+    valid = np.isfinite(x) & np.isfinite(y)
+    x, y = x[valid], y[valid]
+    n = x.shape[0]
+    if n < 3:
+        return {"rho": float("nan"), "pvalue": float("nan"), "n": int(n)}
+    if alternative not in ("two-sided", "greater", "less"):
+        raise ValueError(f"Unknown alternative '{alternative}' (expected two-sided/greater/less).")
+
+    rank_x = rankdata(x)
+    rank_y = rankdata(y)
+    rx = rank_x - rank_x.mean()
+    rx_norm = float(np.sqrt(np.sum(rx**2)))
+    if rx_norm <= 0.0 or float(np.std(rank_y)) <= 0.0:
+        return {"rho": 0.0, "pvalue": float("nan"), "n": int(n)}  # a constant x or y - correlation undefined, not fabricated as significant
+    rho_obs = float(np.corrcoef(rank_x, rank_y)[0, 1])
+
+    rng = np.random.default_rng(seed)
+    perm_idx = np.argsort(rng.random((n_perm, n)), axis=1)
+    perm_rank_y = rank_y[perm_idx]  # (n_perm, n)
+    ry = perm_rank_y - perm_rank_y.mean(axis=1, keepdims=True)
+    ry_norm = np.sqrt(np.sum(ry**2, axis=1))
+    perm_rhos = (ry * rx[None, :]).sum(axis=1) / (rx_norm * ry_norm)
+
+    eps = 1e-12
+    if alternative == "two-sided":
+        count = int(np.sum(np.abs(perm_rhos) >= abs(rho_obs) - eps))
+    elif alternative == "greater":
+        count = int(np.sum(perm_rhos >= rho_obs - eps))
+    else:
+        count = int(np.sum(perm_rhos <= rho_obs + eps))
+    pvalue = float(count + 1) / float(n_perm + 1)
+    return {"rho": rho_obs, "pvalue": pvalue, "n": int(n)}
+
+
+def bootstrap_ci_1d(values: np.ndarray, stat_fn, n_boot: int, seed: int, ci_level: float = 0.95) -> tuple[float, float]:
+    """Generic percentile bootstrap CI of `stat_fn` (e.g. np.median) over a
+    1-D sample, resampling INDICES with replacement (`n_boot` repetitions,
+    seeded). NaN values are dropped first. (n<2 -> (nan,nan), a bootstrap CI
+    of a single point is undefined.)"""
+    v = np.asarray(values, dtype=np.float64)
+    v = v[np.isfinite(v)]
+    n = v.shape[0]
+    if n < 2:
+        return float("nan"), float("nan")
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(n_boot, n))
+    boot_vals = np.array([stat_fn(v[row]) for row in idx], dtype=np.float64)
+    lo_q, hi_q = (1.0 - ci_level) / 2.0, 1.0 - (1.0 - ci_level) / 2.0
+    finite = boot_vals[np.isfinite(boot_vals)]
+    if finite.size == 0:
+        return float("nan"), float("nan")
+    return float(np.quantile(finite, lo_q)), float(np.quantile(finite, hi_q))
+
+
+def cluster_bootstrap_ols_slope(
+    df: pd.DataFrame, x_col: str, y_col: str, cluster_col: str, n_boot: int, seed: int, ci_level: float = 0.95,
+) -> dict[str, float]:
+    """OLS slope of `y_col ~ x_col` pooled over ALL rows of `df` (e.g. every
+    (dataset, alpha, seed) row of exp8_prop2_check), with a bootstrap 95% CI
+    obtained by resampling CLUSTERS (`cluster_col`, e.g. 'dataset') with
+    replacement and keeping every row of each resampled cluster - i.e. a
+    cluster/block bootstrap, appropriate because rows sharing a cluster are
+    NOT independent (reserse/2026-09-17_zostreni_propozice2.md section 7.2:
+    'nikdy inference pres radky E8/E9... jednotka je dataset').
+
+    Returns {'slope','intercept','pvalue' (asymptotic, from the POINT-estimate
+    OLS fit, reported only as a descriptive cross-check - the confirmatory
+    inference is the bootstrap CI), 'ci_lo','ci_hi','n_rows','n_clusters'}.
+    Rows/clusters with a non-finite x or y are dropped first (fail-loud if
+    nothing remains)."""
+    from scipy.stats import linregress
+
+    sub = df[[x_col, y_col, cluster_col]].replace([np.inf, -np.inf], np.nan).dropna()
+    if sub.empty:
+        raise ValueError(f"cluster_bootstrap_ols_slope: no finite ({x_col}, {y_col}) rows.")
+    x = sub[x_col].to_numpy(dtype=np.float64)
+    y = sub[y_col].to_numpy(dtype=np.float64)
+    if np.unique(x).size < 2:
+        raise ValueError(f"cluster_bootstrap_ols_slope: '{x_col}' is constant - OLS slope is undefined.")
+    fit = linregress(x, y)
+
+    clusters = sub[cluster_col].unique()
+    n_clusters = clusters.shape[0]
+    grouped = {c: g for c, g in sub.groupby(cluster_col)}
+    rng = np.random.default_rng(seed)
+    slopes = np.full(n_boot, np.nan, dtype=np.float64)
+    for b in range(n_boot):
+        chosen = rng.choice(clusters, size=n_clusters, replace=True)
+        boot_df = pd.concat([grouped[c] for c in chosen], ignore_index=True)
+        if np.unique(boot_df[x_col].to_numpy()).size < 2:
+            continue  # degenerate resample (all-one-cluster with constant x) - skipped, not fabricated
+        slopes[b] = linregress(boot_df[x_col].to_numpy(dtype=np.float64), boot_df[y_col].to_numpy(dtype=np.float64)).slope
+
+    lo_q, hi_q = (1.0 - ci_level) / 2.0, 1.0 - (1.0 - ci_level) / 2.0
+    finite = slopes[np.isfinite(slopes)]
+    ci_lo = float(np.quantile(finite, lo_q)) if finite.size else float("nan")
+    ci_hi = float(np.quantile(finite, hi_q)) if finite.size else float("nan")
+    return {
+        "slope": float(fit.slope), "intercept": float(fit.intercept), "pvalue": float(fit.pvalue),
+        "ci_lo": ci_lo, "ci_hi": ci_hi, "n_rows": int(sub.shape[0]), "n_clusters": int(n_clusters),
+    }
+
+
 def aggregate_median_iqr(df: pd.DataFrame, metric: str, group_cols: tuple[str, str] = ("dataset", "method")) -> pd.DataFrame:
     """Median and IQR of the metric over seeds, aggregated at the (dataset,
     method) level (section 9: 'report median and IQR', PART B step 2)."""
@@ -114,6 +240,43 @@ def nemenyi_cd(q_alpha: float, n_methods: int, n_datasets: int) -> float:
     if n_methods < 2 or n_datasets < 1:
         raise ValueError(f"Nemenyi CD requires n_methods>=2 and n_datasets>=1, got k={n_methods}, N={n_datasets}.")
     return float(q_alpha * np.sqrt(n_methods * (n_methods + 1) / (6.0 * n_datasets)))
+
+
+def maximal_insignificant_cliques(sorted_avg_ranks: list[float], cd: float) -> list[tuple[int, int]]:
+    """Maximal cliques of the Nemenyi 'not significantly different' relation
+    (Demsar 2006, JMLR 7:1-30, Fig. 1) for a critical-difference diagram:
+    two methods i, j are connected iff |avg_rank_i - avg_rank_j| < cd. Used
+    by `src/figures/fig_cd_diagram.py` to draw ONE horizontal bar per
+    maximal clique (not one bar per pairwise comparison - see
+    projectstate.md 2026-09-17, author feedback on the previous diagram).
+
+    `sorted_avg_ranks` MUST already be sorted ascending (best rank first);
+    the relation graph is then a unit interval graph (ranks are points on a
+    line, edges = pairs closer than `cd`), so every maximal clique is a
+    contiguous index range [start, end] and can be found by, for each
+    candidate start index, greedily extending `end` to the right as far as
+    the range still spans less than `cd` - then keeping only ranges not
+    fully contained in another range (Bron-Kerbosch would also find these,
+    but for a sorted 1-D interval graph maximal cliques ARE exactly the
+    maximal such windows, so it is not needed).
+
+    Returns a list of (start, end) inclusive index pairs (into
+    `sorted_avg_ranks`) with end > start (singletons carry no information -
+    a method not covered by any pair is, by construction, significantly
+    different from every other method and needs no bar)."""
+    n = len(sorted_avg_ranks)
+    candidates: list[tuple[int, int]] = []
+    for start in range(n):
+        end = start
+        while end + 1 < n and sorted_avg_ranks[end + 1] - sorted_avg_ranks[start] < cd:
+            end += 1
+        if end > start:
+            candidates.append((start, end))
+    maximal = [
+        (s, e) for i, (s, e) in enumerate(candidates)
+        if not any(s2 <= s and e2 >= e and (s2, e2) != (s, e) for j, (s2, e2) in enumerate(candidates) if j != i)
+    ]
+    return sorted(set(maximal))
 
 
 def friedman_nemenyi(

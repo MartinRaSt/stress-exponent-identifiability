@@ -36,6 +36,7 @@ from src.figures.fig_common import (
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
+    display_label,
     parse_fig_mode,
     require_experiment_csv,
     save_csv_alongside,
@@ -128,9 +129,9 @@ def main() -> None:
             for spine in ax.spines.values():
                 spine.set_linewidth(0.4)
             if i == 0:
-                ax.set_title(method_name, fontsize=7)
+                ax.set_title(display_label(method_name, "method"), fontsize=7)
             if j == 0:
-                ax.set_ylabel(base_graph, fontsize=7)
+                ax.set_ylabel(display_label(base_graph, "dataset"), fontsize=7)
 
             csv_rows.append(pd.DataFrame({
                 "base_graph": base_graph, "method": method_name, "seed": seed,
@@ -138,7 +139,11 @@ def main() -> None:
                 "label": y_labels if y_labels is not None else "",
             }))
 
-    fig.suptitle(f"Graph layouts: dataset (row) x method (column), distance={args.distance_metric}, seed={seed}", fontsize=9)
+    fig.suptitle(
+        f"Graph layouts: dataset (row) x method (column), "
+        f"distance={display_label(args.distance_metric, 'distance_metric')}, seed={seed}",
+        fontsize=9,
+    )
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     save_figure(fig, FIG_NAME)
     save_csv_alongside(pd.concat(csv_rows, ignore_index=True), FIG_NAME)

@@ -68,9 +68,25 @@ projectstate.md
 CLAUDE.md
 # The manuscript: the publisher receives an exclusive licence and the repository
 # is cited for the CODE. Figures and generated numbers are outputs anyway.
+# Same policy for the English translation (clanek_en/) - it is not published
+# as text either, only cited; and for the internal Czech pre-submission
+# review rounds (review_cz_*/), which are working notes, not deliverables.
 clanek/
+clanek_en/
+review_cz_*/
 # The authors' 2013 conference papers - copyright IEEE, must not be
 # redistributed. README cites them with their DOIs instead.
 konference/
 # Working pipeline outside src/
 pipeline/
+# Flat journal-submission packages built by src/tools/make_submission.py -
+# regenerated from clanek_en/ + results/tables/ + clanek/, never hand-edited.
+submission/
+
+# Editorial Manager (DAMI) submission preparation: cover letter and
+# form-field texts. 00_/03_ are hand-written and kept out of git only
+# because this is per-submission working material, not a deliverable; 01_/02_
+# are regenerated on request by src/tools/make_submission_guide.py once the
+# manuscript is final and the Zenodo DOI exists (author instruction,
+# 2026-09-18: do not generate them - or commit them - before then).
+dami_submission/

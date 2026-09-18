@@ -18,13 +18,32 @@ Grid: rows = (graph, distance metric) from config `fig_graph_layouts_focus`
 (K8) is appended as the 5th/6th row pair ONLY if all required E3 embeddings
 already exist for it - otherwise it is skipped with a WARNING, see the K11
 task spec "after K8, optionally cora if embeddings exist - otherwise skip
-with a log"), columns = 5 methods (`sammon_alpha0_smacof`,
-`sammon_alpha_auto`, `tsne_auto`, `umap_auto`, `spring` - the last is
-graph-native, i.e. independent of the distance metric of a given row, but
-shown in both rows for grid consistency). Edges are drawn in gray (alpha
-0.3, from the GRAPH, not from the embedding), node color = community/class
-(`ds.y`, if present). Below each panel: stress_scale_invariant and auc_rnx
-(E3, seed from the first available seed of `distance_metrics` - see `_pick_seed`).
+with a log"), columns = 5 methods (`sammon_alpha_auto`, `tsne_auto`,
+`umap_auto`, `spectral`, `spring` - the last two are graph-native, i.e.
+independent of the distance metric of a given row, but shown in both rows
+for grid consistency). Edges are drawn in gray (alpha 0.3, from the GRAPH,
+not from the embedding), node color = community/class (`ds.y`, if present).
+Below each panel: stress_scale_invariant and auc_rnx (E3, seed from the
+first available seed of `distance_metrics` - see `_pick_seed`); the
+`sammon_alpha_auto` panel additionally prints the tuned $\\alpha^*$ actually
+selected for that row (`selected_hyperparam`, see `_alpha_star_text`) -
+this paper's rule picks alpha*=0 (i.e. the MDS baseline) in most of the
+default rows, so the annotation tells the reader directly, in-panel, when
+"tuned" and "alpha=0" are the same layout, instead of leaving two
+visually-identical columns unexplained (2026-09-18 fix, reviewer VADA 2b).
+
+2026-09-18 fix (reviewer VADA 2a): this figure used to also show
+`sammon_alpha0_smacof` (alpha=0/MDS) as a column next to `sammon_alpha_auto`
+(the tuned rule) - verified in results/data/exp3_graph_layout_results.csv
+that the tuned rule selects alpha*=0 for football/shortest_path,
+football/resistance and polbooks/resistance (3 of the 4 default rows), so
+those two columns were BIT-IDENTICAL saved embeddings (`np.array_equal`) in
+3 of 4 rows - a quarter of the panel grid carried no extra information.
+`sammon_alpha0_smacof` was replaced by `spectral` (see
+`fig_graph_layouts_focus.methods` in config_experiments.yaml for the full
+rationale) - a native layout already computed by exp3_graph_layout (no new
+experiment run) and discussed in the article (03_metoda.tex, 05_vysledky.tex,
+06_diskuse.tex) but previously missing from this main-text figure.
 
 Run: venv\\python.exe -m src.figures.fig_graph_layouts [--quick|--full|--smoke]
 """
@@ -46,6 +65,7 @@ from src.figures.fig_common import (
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
+    display_label,
     parse_fig_mode,
     require_experiment_csv,
     save_csv_alongside,
@@ -59,9 +79,33 @@ BASE_EXPERIMENT_NAME = "exp3_graph_layout"
 # the graph - see exp3_graph_layout.py native_graph_methods)
 _NATIVE_METHODS = {"kamada_kawai", "spring", "spectral"}
 
+# 2026-09-18 fix (VADA 2b): the tuned-alpha method whose panel gets the
+# extra "alpha*=..." annotation (see `_alpha_star_text`) - this is the only
+# method in `fig_graph_layouts_focus.methods` whose weight exponent is
+# chosen per-row rather than fixed, so it is the only one where a reader
+# needs to be told, in-panel, which fixed-alpha layout it happens to match.
+_ALPHA_TUNED_METHOD = "sammon_alpha_auto"
+
 
 def _dataset_label(graph: str, method_name: str, distance_metric: str) -> str:
     return graph if method_name in _NATIVE_METHODS else f"{graph}__{distance_metric}"
+
+
+def _alpha_star_text(selected_hyperparam) -> str | None:
+    """`None` (draw nothing) if `selected_hyperparam` is missing/NaN
+    (native methods, e.g. 'spring'/'spectral', have no tuned hyperparameter)
+    or does not look like this experiment's own 'alpha=<value>' encoding
+    (see exp3_graph_layout.py) - otherwise the tuned alpha as
+    "$\\alpha^*$=<value>", e.g. "$\\alpha^*$=0.0", so a reader immediately
+    sees WHICH fixed-alpha layout the tuned rule picked for this row,
+    instead of having to infer it from two visually-identical columns
+    (VADA 2, reviewer 2026-09-18)."""
+    if selected_hyperparam is None or (isinstance(selected_hyperparam, float) and not np.isfinite(selected_hyperparam)):
+        return None
+    text = str(selected_hyperparam)
+    if not text.startswith("alpha="):
+        return None
+    return r"$\alpha^*$=" + text[len("alpha="):]
 
 
 def _panel_available(df_ok: pd.DataFrame, exp_name: str, graph: str, method_name: str, distance_metric: str, seed: int, n_nodes: int) -> bool:
@@ -182,13 +226,28 @@ def main() -> None:
             for spine in ax.spines.values():
                 spine.set_linewidth(0.4)
             if i == 0:
-                ax.set_title(method_name, fontsize=7)
+                ax.set_title(display_label(method_name, "method"), fontsize=7)
             if j == 0:
-                ax.set_ylabel(f"{graph}\n({distance_metric})", fontsize=6.5)
+                ax.set_ylabel(f"{display_label(graph, 'dataset')}\n({display_label(distance_metric, 'distance_metric')})", fontsize=6.5)
 
             stress = float(row["stress_scale_invariant"].iloc[0])
             auc_rnx = float(row["auc_rnx"].iloc[0])
-            ax.text(0.5, -0.10, f"stress={stress:.3f}  auc_rnx={auc_rnx:.3f}", transform=ax.transAxes, ha="center", va="top", fontsize=5)
+            selected_hyperparam = row["selected_hyperparam"].iloc[0] if "selected_hyperparam" in row.columns else None
+            panel_text = f"stress={stress:.3f}  {display_label('auc_rnx', 'metric')}={auc_rnx:.3f}"
+            # 2026-09-18 fix (VADA 2b): print the tuned alpha* actually used
+            # this row, ONLY for the tuned method (_ALPHA_TUNED_METHOD) - the
+            # panel then self-documents whenever alpha*=0 (i.e. this layout
+            # is the alpha=0/MDS baseline), instead of leaving that fact only
+            # visible as an unexplained visual match against another column.
+            if method_name == _ALPHA_TUNED_METHOD:
+                alpha_star_text = _alpha_star_text(selected_hyperparam)
+                if alpha_star_text is not None:
+                    panel_text += f"\n{alpha_star_text}"
+            ax.text(
+                0.5, -0.10,
+                panel_text,
+                transform=ax.transAxes, ha="center", va="top", fontsize=5,
+            )
 
             for k in range(Y.shape[0]):
                 csv_rows.append({
@@ -196,6 +255,7 @@ def main() -> None:
                     "node_index": k, "y0": float(Y[k, 0]), "y1": float(Y[k, 1]),
                     "label": (y_labels[k] if y_labels is not None else ""),
                     "stress_scale_invariant": stress, "auc_rnx": auc_rnx,
+                    "selected_hyperparam": ("" if selected_hyperparam is None or (isinstance(selected_hyperparam, float) and not np.isfinite(selected_hyperparam)) else str(selected_hyperparam)),
                 })
 
     fig.suptitle(f"Graph layouts: graph x distance (row) vs. method (column), seed={seed}", fontsize=9)

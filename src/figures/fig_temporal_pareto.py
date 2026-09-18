@@ -44,6 +44,7 @@ from src.figures.fig_common import (
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
+    display_label,
     parse_fig_mode,
     save_csv_alongside,
     save_figure,
@@ -74,7 +75,18 @@ def main() -> None:
     solvers = sorted(relative["solver"].unique())
     datasets = sorted(relative["dataset"].unique())
 
-    fig, axes = plt.subplots(1, len(solvers), figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.42), sharey=False)
+    # Author feedback 2026-09-17 (supplement legibility pass): (1) raw
+    # "..._temporal"/"solver=dtsne" identifiers replaced by display_label();
+    # (2) each panel used to carry its OWN long x-axis label
+    # ("stability ratio vs. lambda=0 (...)") via ax.set_xlabel - with 3
+    # panels squeezed into one figure width, tight_layout could not keep
+    # them from colliding into each other/becoming illegible. The x-axis
+    # MEANING is identical across all 3 panels (only the data range
+    # differs), so it is now a single shared label centered under the whole
+    # figure (fig.supxlabel) instead of 3 competing copies.
+    fig, axes = plt.subplots(
+        1, len(solvers), figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.42 + 0.35), sharey=False,
+    )
     if len(solvers) == 1:
         axes = [axes]
     for ax, solver in zip(axes, solvers):
@@ -84,18 +96,22 @@ def main() -> None:
             if sub.empty:
                 continue
             color = OKABE_ITO[i % len(OKABE_ITO)]
-            ax.plot(sub["stab_ratio_vs_lambda0"], sub["qual_median"], marker="o", color=color, label=dataset_name, linewidth=1.0, markersize=3)
+            ax.plot(
+                sub["stab_ratio_vs_lambda0"], sub["qual_median"], marker="o", color=color,
+                label=display_label(dataset_name, "dataset"), linewidth=1.0, markersize=3,
+            )
             for _, r in sub.iterrows():
                 if not any(abs(r["lam"] - lam_sel) < 1e-9 for lam_sel in label_lambdas):
                     continue
                 ax.annotate(f"{r['lam']:g}", (r["stab_ratio_vs_lambda0"], r["qual_median"]), fontsize=4.5, xytext=(2, 2), textcoords="offset points")
         ax.axvline(1.0, color="grey", linewidth=0.6, linestyle="--")
-        ax.set_xlabel("stability ratio vs. lambda=0 (stab(lambda)/stab(0))")
-        ax.set_ylabel("median stress (qual)")
-        ax.set_title(f"solver={solver}", fontsize=7)
+        ax.set_ylabel("median stress (qual)", fontsize=6.5)
+        ax.set_title(f"Solver: {display_label(solver, 'solver')}", fontsize=7)
+        ax.tick_params(axis="both", labelsize=6)
         ax.legend(fontsize=5, ncol=1)
+    fig.supxlabel(r"stability ratio vs. $\lambda$=0 (stab($\lambda$)/stab(0))", fontsize=7)
     fig.suptitle("Temporal regularization Pareto curve: stability gain vs. stress cost (E4)", fontsize=8)
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.tight_layout(rect=(0, 0.05, 1, 0.95))
     save_figure(fig, FIG_NAME)
     save_csv_alongside(relative, FIG_NAME)
 

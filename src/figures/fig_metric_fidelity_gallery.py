@@ -47,17 +47,10 @@ import pandas as pd
 from src.common.config import get_path
 from src.experiments.config_experiments import load_experiments_config, resolve_experiment_config
 from src.experiments.exp_common import resolve_experiment_name
-from src.figures.fig_common import OKABE_ITO, RASTER_DPI, add_quick_arg, parse_fig_mode, save_csv_alongside, save_figure
+from src.figures.fig_common import OKABE_ITO, RASTER_DPI, add_quick_arg, display_label, parse_fig_mode, save_csv_alongside, save_figure
 
 FIG_NAME = "fig_metric_fidelity_gallery"
 BASE_EXPERIMENT_NAME = "exp9_metric_fidelity"
-
-_METHOD_LABEL = {
-    "oracle_truth": "oracle (truth)", "sammon_alpha_pred": "$\\alpha$-Sammon (pred)",
-    "sammon_alpha0_smacof": "MDS ($\\alpha$=0)", "tsne_auto": "t-SNE (auto)",
-    "umap_auto": "UMAP (auto)", "densmap": "densMAP",
-}
-_SCENARIO_LABEL = {"S1": "S1 planar clusters", "S2": "S2 tree clusters", "S3": "S3 bent sheet"}
 
 
 def _embeddings_dir(mode: str) -> Path:
@@ -155,9 +148,9 @@ def main() -> None:
             df_panel["method"] = method
             all_rows.append(df_panel)
             if i == 0:
-                ax.set_title(_METHOD_LABEL.get(method, method), fontsize=7)
+                ax.set_title(display_label(method, "method"), fontsize=7)
             if j == 0:
-                ax.set_ylabel(_SCENARIO_LABEL.get(scenario, scenario), fontsize=7)
+                ax.set_ylabel(display_label(scenario, "scenario"), fontsize=7)
 
     fig.tight_layout()
     save_figure(fig, FIG_NAME)

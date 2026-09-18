@@ -73,6 +73,374 @@ q1_negative_control_datasets: &q1_negative_controls
   - wall_robot
   - dry_bean
 
+# Shared human-readable labels for raw identifiers (dataset/method/metric/...
+# names), used by `src.figures.fig_common.display_label(name, kind)` in
+# EVERY figure script - author feedback 2026-09-17: 11 figure scripts printed
+# raw config/CSV identifiers ("auc_rnx", "mnist_784", "sammon_alpha_smacof",
+# ...) directly into titles/axis labels/ticks/legends. Previously
+# fig_faithful_map kept its own private method_labels/dataset_labels block;
+# it is now merged into this ONE shared section (`fig_faithful_map` no
+# longer has its own copy - see below). An unmapped name never falls back to
+# the raw identifier: `display_label` word-splits on '_' and looks each word
+# up in `word_overrides` (see `_fallback_label` in fig_common.py).
+display_labels:
+  dataset:
+    # exp1_dr_benchmark core datasets
+    iris: "Iris"
+    wine: "Wine"
+    digits: "Digits"
+    breast_cancer: "Breast cancer"
+    olivetti: "Olivetti faces"
+    mnist_784: "MNIST (784-d)"
+    fashion_mnist: "Fashion-MNIST"
+    coil20: "COIL-20"
+    optdigits: "Optdigits"
+    pendigits: "Pendigits"
+    satimage: "Satimage"
+    letter: "Letter"
+    spambase: "Spambase"
+    har: "HAR"
+    isolet: "Isolet"
+    cnae9: "CNAE-9"
+    usps: "USPS"
+    glass: "Glass"
+    ionosphere: "Ionosphere"
+    seeds: "Seeds"
+    yeast: "Yeast"
+    vehicle: "Vehicle"
+    segment: "Segment"
+    swiss_roll: "Swiss roll"
+    s_curve: "S-curve"
+    sphere: "Sphere"
+    severed_sphere: "Severed sphere"
+    helix: "Helix"
+    torus: "Torus"
+    two_moons: "Two moons"
+    gaussian_clusters: "Gaussian clusters"
+    hierarchical_clusters: "Hierarchical clusters"
+    # Q1 hold-out datasets (q1_holdout_datasets anchor above)
+    shuttle: "Shuttle"
+    abalone: "Abalone"
+    page_blocks: "Page blocks"
+    airfoil: "Airfoil"
+    banknote: "Banknote"
+    mfeat_morphological: "Mfeat (morphological)"
+    wall_robot: "Wall-following robot"
+    hill_valley: "Hill-valley"
+    phoneme: "Phoneme"
+    dry_bean: "Dry bean"
+    ccpp: "CCPP"
+    swiss_roll_hole: "Swiss roll (hole)"
+    gaussian_clusters_separated: "Gaussian clusters (separated)"
+    mobius_strip: "Mobius strip"
+    klein_bottle_4d: "Klein bottle (4D)"
+    twin_peaks: "Twin peaks"
+    trefoil_knot: "Trefoil knot"
+    hyperbolic_paraboloid: "Hyperbolic paraboloid"
+    anisotropic_ellipsoid: "Anisotropic ellipsoid"
+    # E3 graph datasets (also used as a "dataset" in fig_graph_layouts*)
+    karate: "Karate club"
+    les_miserables: "Les Miserables"
+    florentine: "Florentine families"
+    dolphins: "Dolphins"
+    football: "Football"
+    polbooks: "Political books"
+    email_eu_core: "Email (EU core)"
+    cora: "Cora"
+    power_grid: "Power grid"
+    facebook_combined: "Facebook (combined)"
+    ca_grqc: "CA-GrQc"
+    pgp: "PGP web of trust"
+    # E4 temporal contact-network datasets (fig_temporal_pareto, supplement -
+    # author feedback 2026-09-17: raw "..._temporal" identifiers were shown
+    # verbatim in the legend, the only remaining figure with underscores).
+    primary_school_temporal: "Primary school (temporal)"
+    hospital_temporal: "Hospital (temporal)"
+    high_school_temporal: "High school (temporal)"
+    invs13_temporal: "InVS13 (temporal)"
+    sfhh_temporal: "SFHH (temporal)"
+    ht09_temporal: "HT09 (temporal)"
+    email_eu_core_temporal: "Email (EU core, temporal)"
+  method:
+    pca: "PCA"
+    # author feedback 2026-09-17 (CD diagram): 'mds' (src/methods/mds.py,
+    # sklearn.manifold.MDS/SMACOF) and 'sammon_alpha0_smacof' (this
+    # project's own alpha-family SMACOF solver at alpha=0, mathematically
+    # the same unweighted-stress objective but a DIFFERENT implementation/
+    # solver) both rendered as plain "MDS" - indistinguishable in a diagram
+    # showing both. Disambiguated by naming the implementation, not the
+    # objective (sammon_alpha0_smacof keeps its existing 'MDS ($\alpha=0$)'
+    # label just below).
+    mds: "MDS (scikit-learn)"
+    sammon_classic: "Sammon (classic)"
+    isomap: "Isomap"
+    lle: "LLE"
+    tsne: "t-SNE (default)"
+    tsne_auto: "t-SNE"
+    umap: "UMAP (default)"
+    umap_auto: "UMAP"
+    pacmap: "PaCMAP"
+    trimap: "TriMap"
+    sammon_alpha0_smacof: 'MDS ($\alpha=0$)'
+    sammon_alpha_smacof: 'Sammon ($\alpha=1$)'
+    sammon_alpha2_smacof: 'Kamada-Kawai ($\alpha=2$)'
+    sammon_alpha_auto: '$\alpha$-Sammon (tuned)'
+    sammon_multiscale: "Sammon (multiscale)"
+    sammon_sgd_stab: "Sammon (SGD, stabilized)"
+    sammon_sparse_smacof: "Sammon (sparse SMACOF)"
+    densmap: "densMAP"
+    phate: "PHATE"
+    sammon_alpha_pred: '$\alpha$-Sammon (predicted)'
+    oracle_truth: "Oracle (truth)"
+    spring: "Spring layout"
+  # E15 discovery-task question identifiers (exp15_discovery_task_results.csv
+  # 'question' column, src/sammon/discovery_task.py::QUESTION_*) - used by
+  # fig_discovery_task.py.
+  question:
+    nearest_class_pair: "Q1: nearest class pair"
+    most_dispersed_class: "Q2: most dispersed class"
+  # fig_metric_correlations.metrics (also reused by any other figure that
+  # prints one of these raw column names)
+  metric:
+    auc_rnx: "AUC$_{RNX}$"
+    trustworthiness_k7: "Trustworthiness (k=7)"
+    stress_scale_invariant: "Stress (scale-inv.)"
+    q_global: "Q (global)"
+    shepard_spearman_rho: "Shepard correlation"
+    class_spread_spearman: "Class spread (Spearman)"
+    centroid_dist_spearman: "Centroid distance (Spearman)"
+    wall_time_sec: "Wall time (s)"
+    continuity_k7: "Continuity (k=7)"
+    knn_jaccard_k7: "kNN Jaccard (k=7)"
+    q_local: "Q (local)"
+    distance_correlation: "Distance correlation"
+    lcmc_k7: "LCMC (k=7)"
+    neighborhood_hit_k7: "Neighborhood hit (k=7)"
+    kruskal_stress1: "Kruskal stress-1"
+    # fig_regime_map x-axis (K1 dataset_properties.csv column) - the
+    # nearest-neighbor distance-concentration ratio, symbol rho_NN
+    # (author feedback 2026-09-17: no raw column name on the axis).
+    nn_ratio_k1: '$\rho_{NN}$'
+  # exp3_graph_layout distance metrics (fig_graph_layouts*, row/subtitle labels)
+  distance_metric:
+    shortest_path: "Shortest-path distance"
+    resistance: "Resistance distance"
+  # optimization solvers (exp2_solver_scaling / exp4_temporal)
+  solver:
+    sgd_naive: "SGD (naive)"
+    sgd_stab: "SGD (stabilized)"
+    smacof: "SMACOF"
+    sparse_smacof: "Sparse SMACOF"
+    sparse_sgd: "Sparse SGD"
+    sgd: "SGD"
+    dtsne: "Dynamic t-SNE"
+  # exp2_scaling device suffix ("<solver>__<device>" method_name)
+  device:
+    cpu: "CPU"
+    cuda: "GPU (CUDA)"
+  # fig_metric_fidelity_gallery scenarios (Q1-step3, S1/S2/S3)
+  scenario:
+    S1: "S1 planar clusters"
+    S2: "S2 tree clusters"
+    S3: "S3 bent sheet"
+  # fig_cd_diagram.py title (the `--experiment` CLI argument, i.e. the
+  # `stats_<experiment>_<metric>.csv` base name) - an unmapped experiment
+  # name still falls back to `_fallback_label` (word split), just less
+  # polished than these curated entries.
+  experiment:
+    exp1_dr_benchmark: "E1 DR benchmark (all methods)"
+    exp1_dr_benchmark_main: "E1 DR benchmark (main methods)"
+    exp3_graph_layout_distance: "E3 graph layout (distance-based methods)"
+    exp3_graph_layout_native: "E3 graph layout (native layouts)"
+  # fig_neighbor_survival.py distance-concentration REGIME PANEL names
+  # (src.experiments.exp13_neighbor_survival.PANEL_LOW_RATIO/PANEL_REST) -
+  # author feedback 2026-09-17 (second review): these constants are used
+  # VERBATIM as the CSV `panel` column value AND, until this fix, as the raw
+  # figure row label ("low_ratio (tuning helps)"). Only the RENDERED text
+  # changes here; exp13_neighbor_survival.py's own constants (used for
+  # filtering) are untouched.
+  regime:
+    "low_ratio (tuning helps)": 'Low $\rho_{NN}$: tuning helps'
+    "mid_or_high_ratio (tuning does not help)": 'Mid/high $\rho_{NN}$: tuning does not help'
+  # fig_neighbor_survival.py alpha-SELECTION POLICY names
+  # (exp13_neighbor_survival.POLICY_LABEL_PRED/POLICY_LABEL_BEST and
+  # policy_label(alpha) for the fixed-alpha rows) - same "CSV value
+  # untouched, only rendered text changes" rule as `regime` above.
+  # Author feedback 2026-09-17 (symbol unification): plain "alpha=" text in
+  # tick labels/legends must become mathtext $\alpha$ everywhere, so the
+  # fixed-alpha rows now have explicit entries too (previously passed
+  # through display_label's fallback unchanged, since they contain no
+  # underscore).
+  policy:
+    "alpha_pred (rule)": '$\alpha$-pred (proposed rule)'
+    "alpha_best (oracle)": '$\alpha$-best (grid optimum, upper bound)'
+    "alpha=0 (MDS)": '$\alpha=0$ (MDS)'
+    "alpha=1 (Sammon)": '$\alpha=1$ (Sammon)'
+    "alpha=2 (Kamada-Kawai)": '$\alpha=2$ (Kamada-Kawai)'
+  # LaTeX TABLE COLUMN HEADERS (src/experiments/report_tables.py::_column_label),
+  # a SEPARATE section from `metric` above: `metric` labels figure axes/
+  # legends, where space is cheap ("Trustworthiness (k=7)"); `column` labels
+  # must stay SHORT ("Trust\textsubscript{7}") so the header never dictates
+  # a table's width - `write_booktabs_tex` additionally word-wraps a
+  # multi-word entry (`report.table_header_max_line_chars`) into a multi-row
+  # `\thead{...}` cell (author feedback 2026-09-18: a raw `col_name\_with\_underscores`
+  # header is ONE unbreakable LaTeX word, widening the column even when the
+  # data itself is short). A column NOT listed here falls back to
+  # `display_label(name, "column")` -> `_fallback_label` (underscores become
+  # spaces, so the fallback wraps too, just less polished than a curated entry).
+  column:
+    method: "Method"
+    dataset: "Dataset"
+    n_graphs: "$n$ graphs"
+    n_datasets: "$n$ datasets"
+    size_group: "Size"
+    kind: "Kind"
+    auc_rnx: 'AUC\textsubscript{RNX}'
+    trustworthiness_k7: 'Trust\textsubscript{7}'
+    stress_scale_invariant: "Stress"
+    q_global: 'Q\textsubscript{glob}'
+    shepard_spearman_rho: 'Shepard $\rho$'
+    class_spread_spearman: 'Spread $\rho$'
+    centroid_dist_spearman: 'Centroid $\rho$'
+    wall_time_sec: "Time [s]"
+    solver: "Solver"
+    lam: '$\lambda$'
+    alpha: '$\alpha$'
+    level: "Level"
+    factor: "Factor"
+    experiment: "Experiment"
+    tau: '$\tau$'
+    tau_source: '$\tau$ source'
+    status: "Status"
+    error: "Error"
+    panel: "Panel"
+    policy: "Policy"
+    k: '$k$'
+    neighbors_kept: "Neighbors kept"
+    n_samples: "$n$ samples"
+    rho_nn: '$\rho_{NN}$'
+    nn_ratio_k1: '$\rho_{NN}$'
+    alpha_star: '$\alpha^{*}$'
+    alpha_pred: '$\alpha$ pred.'
+    n: '$n$'
+    median: "Median"
+    iqr: "IQR"
+    regime: "Regime"
+    metric: "Metric"
+    n_datasets_regime: "Datasets"
+    n_datasets_total: "Datasets"
+    n_datasets_complete_block: "Compl. block"
+    n_datasets_on_front_auc_stress: "Front (AUC/stress)"
+    n_datasets_on_front_qlocal_qglobal: "Front (Q loc/glob)"
+    n_datasets_dominated_by_neighbor_method: "Dominated"
+    n_rows_kept: "Rows kept"
+    n_rows_total: "Rows total"
+    n_datasets_kept: "Datasets kept"
+    n_positive: '$n^{+}$'
+    n_nontrivial_alpha_one: 'Nontriv. $\alpha{=}1$'
+    row_type: "Row"
+    wilcoxon_pvalue: 'Wilcoxon $p$'
+    frac_both_gaps_nonneg: 'Both gaps $\ge 0$'
+    med_tight_v1: "Tight. V1"
+    med_tight_sandwich: "Tight. sandwich"
+    spearman_ceiling_vs_gain: "Ceiling vs. gain"
+    # plain '%' here (NOT pre-escaped '\%') - _column_label runs every
+    # display_labels.column value through escape_latex_label, which does
+    # the '%' -> '\%' escaping itself; a pre-escaped value would be escaped
+    # a second time ('\%' -> '\\%').
+    stab_pct_change: "Stability [%]"
+    # Statistics tables (stats_*.tex): without these the fallback would
+    # title-case the raw identifier ("Iqr Across Datasets", "Friedman
+    # Pvalue", "Cd"), which is wrong for established abbreviations.
+    avg_rank: "Avg. rank"
+    # Pre-registered families table (exp1_holdout_confirmatory): the fallback
+    # title-case labels ("Hypothesis Id", "P Perm") made the table 855pt wide
+    # against a 548pt target - short labels keep it readable.
+    hypothesis_id: "Hypothesis"
+    family: "Family"
+    role: "Role"
+    subset: "Subset"
+    method_b: "Baseline"
+    median_diff: 'Median $\Delta$'
+    p_perm: '$p$ (perm.)'
+    p_holm: '$p$ (Holm)'
+    reject_holm: "Reject"
+
+    # paired dominance (#positive - #negative)/n, src/experiments/stats_holdout.py
+    delta_pair: '$\delta_{\mathrm{pair}}$'
+    median_across_datasets: "Median over datasets"
+    iqr_across_datasets: "IQR over datasets"
+    cd: "CD"
+    friedman_pvalue: 'Friedman $p$'
+    kendall_w: "Kendall $W$"
+    friedman_chi2: 'Friedman $\chi^{2}$'
+    n_methods: "Methods"
+    # E6/E10 per-dataset tables
+    auc_at_alpha0: 'AUC at $\alpha{=}0$'
+    auc_at_alpha1: 'AUC at $\alpha{=}1$'
+    qual_pct_change: "Quality [%]"
+    wall_time_sec_k6: "Time [s]"
+    alpha0: '$\alpha{=}0$'
+    alpha1: '$\alpha{=}1$'
+    alpha_auto: '$\alpha$ auto'
+    alpha_star_max: '$\alpha^{*}$'
+    alpha_star_constrained: '$\alpha^{*}$ constr.'
+    alpha_pred_log_linear: '$\alpha$ log-lin.'
+    alpha_pred_two_threshold: '$\alpha$ 2-thr.'
+    gain_vs_alpha0: 'Gain vs. $\alpha{=}0$'
+    gain_vs_alpha1: 'Gain vs. $\alpha{=}1$'
+    # exp10_identifiability_table / exp10_identifiability_stats (reserse/2026-09-17_zostreni_propozice2.md,
+    # src/sammon/identifiability.py docstring for the exact symbol definitions)
+    n_samples_hessian: "$n$ (Hessian)"
+    s_u: '$s_{u}$'
+    s_u_heuristic: '$s_{u}$ (heur.)'
+    c_alpha: '$c_{\alpha}$'
+    gamma_tilde_Y0: '$\tilde{\gamma}(Y_{0})$'
+    gamma_tilde_Ya: '$\tilde{\gamma}(Y_{\alpha})$'
+    r_Y0: '$r(Y_{0})$'
+    r_Ya: '$r(Y_{\alpha})$'
+    bound_v1: "Bound (V1)"
+    Delta_prime: "$\\Delta'$"
+    tight_v1: "Tight (V1)"
+    tight_sandwich: "Tight (sandwich)"
+    I0_exact: '$I_{0}$'
+    cert_lower: "Cert. lower"
+    alpha_eta: '$\alpha_{\eta}$'
+    alpha_dagger: '$\alpha^{\dagger}$'
+  # Per-word fallback for any name NOT covered above (`_fallback_label` in
+  # fig_common.py) - keeps common acronyms/abbreviations correctly cased
+  # even before an explicit dataset/method/metric entry is added.
+  word_overrides:
+    pca: "PCA"
+    mds: "MDS"
+    tsne: "t-SNE"
+    umap: "UMAP"
+    lle: "LLE"
+    sgd: "SGD"
+    smacof: "SMACOF"
+    auc: "AUC"
+    rnx: "RNX"
+    knn: "kNN"
+    lcmc: "LCMC"
+    mnist: "MNIST"
+    usps: "USPS"
+    har: "HAR"
+    cnae9: "CNAE-9"
+    coil20: "COIL-20"
+    ccpp: "CCPP"
+    mfeat: "Mfeat"
+    phate: "PHATE"
+    pacmap: "PaCMAP"
+    trimap: "TriMap"
+    densmap: "densMAP"
+    cuda: "CUDA"
+    cpu: "CPU"
+    # Symbol unification (author feedback 2026-09-17): a bare "alpha"/"rho"
+    # word split out of a raw identifier renders as the Greek mathtext
+    # symbol, never the Latin word.
+    alpha: '$\alpha$'
+    rho: '$\rho$'
+
 exp1_dr_benchmark:
   n_components: 2
   n_max: 5000
@@ -1056,6 +1424,14 @@ report:
   # tolerance a WARNING, below it INFO - the merge into a single 'pca'
   # level always happens, the difference is always written to the CSV)
   exp5_init_merge_tolerance: 1.0e-3
+  # 2026-09-18 header width fix: max LaTeX-source characters per line of a
+  # `write_booktabs_tex` header cell (src/experiments/report_tables.py::
+  # _wrap_header_label) before it wraps onto another `\thead{...}` line -
+  # a single token (e.g. a macro like 'AUC\textsubscript{RNX}', which
+  # contains no space) is NEVER split further even if longer than this, so
+  # curated short column labels stay on one line. Tuned by eye against the
+  # widest tables (exp10_identifiability_table, exp14_convergence_robustness).
+  table_header_max_line_chars: 14
   # methods against which "dominated_by_neighbor_method" is computed in the Pareto analysis (K3)
   neighbor_methods:
     - tsne
@@ -1136,6 +1512,15 @@ fig_temporal_pareto:
 # alpha from {0,1,2}) has only 3 discrete y values -> points overlap, hence
 # a small deterministic jitter in y (jitter_seed/jitter_std).
 fig_regime_map:
+  # Candidate datasets to label, in preference order (author feedback
+  # 2026-09-17: dataset-name labels overlapped each other and the points -
+  # "min popisku, citelny graf" is the explicit priority). This is NOT the
+  # final labeled set: `_select_label_datasets` (fig_regime_map.py) walks
+  # this list in order and keeps a candidate only if its log10(nn_ratio_k1)
+  # is at least `min_log10_x_gap` away from every already-accepted label
+  # (both panels share the x-axis) - the two global nn_ratio_k1 extremes are
+  # always tried first, ahead of this list, so the plotted range's edges are
+  # always represented if space allows.
   label_datasets:
     - iris
     - helix
@@ -1150,15 +1535,55 @@ fig_regime_map:
     - letter
     - spambase
     - glass
+  # Minimum spacing between two accepted dataset labels in log10(nn_ratio_k1)
+  # units - chosen so at most ~8-9 labels fit across the full E1 vector-dataset
+  # range (nn_ratio_k1 in [0.008, 0.5], i.e. ~1.8 decades) without crowding a
+  # ~90mm-wide panel at 7pt font.
+  min_log10_x_gap: 0.18
   jitter_seed: 42
   jitter_std: 0.06
+  # Author fact-check 2026-09-18: 04_experimenty.tex claimed rho_NN
+  # (nn_ratio_k1) correlates with the grid-optimum alpha more strongly than
+  # every other dataset property. Recomputing over ALL numeric columns of
+  # dataset_properties.csv (kind=='vector') shows the ambient dimension `d`
+  # correlates more strongly (rho=-0.758 vs. -0.672 for nn_ratio_k1, n=51).
+  # This list drives export_numbers.py's
+  # `_add_regime_map_property_spearman` (results/tables/[<mode>/]
+  # regime_map_property_spearman.csv) - the order here is only the table's
+  # row order, not a claim about ranking. Columns excluded on purpose:
+  # 'kind' (categorical, not a numeric property), 'n_classes' and
+  # 'silhouette_input' (defined only for labeled datasets, i.e. mostly NaN
+  # over the full E1 vector set and not part of the correlation the article
+  # discusses).
+  property_correlation_columns:
+    - n
+    - d
+    - nn_ratio_k1
+    - nn_ratio_k5
+    - nn_ratio_k10
+    - dist_cv
+    - dist_skew
+    - relative_contrast
+    - id_twonn
+    - id_mle
+    - hubness_skew
 
 # K10 (documentation/2026-09-12_plan_smeru_clanku.md) - "faithful map" hero
 # figure: datasets x methods over ALREADY SAVED exp1_dr_benchmark embeddings
 # (seed 'seed' below) - no re-run of DR methods. src/figures/fig_faithful_map.py.
+# 2026-09-17 revision: added sammon_alpha_smacof (classical alpha=1 Sammon)
+# as its own column, because sammon_alpha0_smacof and sammon_alpha_auto are
+# numerically identical for 2 of the 3 datasets here (auto tuning picks
+# alpha~0) - without the alpha=1 column the figure spent 2 of 4 columns on
+# one indistinguishable pair. method_labels/dataset_labels are the
+# human-readable strings shown in the figure (never the raw config keys).
 fig_faithful_map:
   datasets: ["mnist_784", "iris", "hierarchical_clusters"]
-  methods: ["sammon_alpha0_smacof", "sammon_alpha_auto", "tsne_auto", "umap_auto"]
+  methods: ["sammon_alpha0_smacof", "sammon_alpha_smacof", "sammon_alpha_auto", "tsne_auto", "umap_auto"]
+  # Column/row labels come from the SHARED `display_labels.method`/`dataset`
+  # section above (src.figures.fig_common.display_label) - this figure used
+  # to keep a private method_labels/dataset_labels copy here; merged
+  # 2026-09-17 so all figure scripts share one mapping.
   seed: 0
   # 1-sigma scatter ellipse of the class in the output (multiple of the standard deviation)
   ellipse_n_std: 1.0
@@ -1167,6 +1592,13 @@ fig_faithful_map:
   # convention as figures.gallery_methods.csv_max_points_per_panel
   csv_max_points_per_panel: 2000
   csv_subsample_seed: 42
+  # Upper cap of the per-panel "stress fidelity" bar (fidelity = 1 -
+  # min(stress, stress_bar_max)/stress_bar_max, see
+  # fig_faithful_map._stress_to_fidelity): the smallest round number above
+  # the max stress_scale_invariant observed over this figure's own
+  # (dataset, method) scope (0.1954, mnist_784 x sammon_alpha_smacof) -
+  # NOT a generic constant, re-check if datasets/methods change.
+  stress_bar_max: 0.2
 
 # K11 (documentation/2026-09-12_plan_smeru_clanku.md) - focused figure of
 # graph layouts (replaces the original fig_graph_layouts.py, which is
@@ -1179,7 +1611,21 @@ fig_graph_layouts_focus:
   # CANDIDATE set, not a guaranteed result.
   graphs: ["polbooks", "football", "cora"]
   distance_metrics: ["shortest_path", "resistance"]
-  methods: ["sammon_alpha0_smacof", "sammon_alpha_auto", "tsne_auto", "umap_auto", "spring"]
+  # 2026-09-18 fix (reviewer VADA 2a): 'sammon_alpha0_smacof' (=MDS, alpha=0)
+  # used to sit next to 'sammon_alpha_auto' (the tuned rule), but the tuned
+  # rule picks alpha*=0 in 3 of the 4 (graph, distance) rows shown here
+  # (results/data/exp3_graph_layout_results.csv, selected_hyperparam), so the
+  # two columns were bit-identical embeddings in 3 of 4 rows (see git history
+  # / fig_graph_layouts.py's module docstring for the verification). Replaced
+  # 'sammon_alpha0_smacof' with 'spectral' - a native layout already computed
+  # by exp3_graph_layout (no new experiment run), discussed in the article
+  # (03_metoda.tex: for resistance distance the weight family covers the
+  # spectral/commute-time layout at alpha=0; 05_vysledky.tex/06_diskuse.tex:
+  # spectral has the best AUC_RNX among native layouts despite not being a
+  # metric map) but previously absent from this main-text figure -
+  # 'sammon_alpha_auto' (this paper's tuned rule) stays so the "does tuning
+  # even move the layout" question this figure asks remains answerable.
+  methods: ["sammon_alpha_auto", "tsne_auto", "umap_auto", "spectral", "spring"]
 
 # Q1 step 1 (reserse/2026-09-14_specifikace_rozsireni_q1.md, backed up/
 # refined in the author's requirement 2026-09-14) - post-hoc empirical
@@ -1253,6 +1699,10 @@ fig_prop2_alpha_prediction:
   # which tau value (from exp8_prop2_check.alpha_bound_tau_grid) goes
   # directly into the main figure - the others remain only in the auxiliary CSV
   tau_for_figure: 0.05
+  # datasets labeled by name directly in the figure - same convention as
+  # fig_prop2_tightness.label_datasets / fig_regime_map.label_datasets
+  # (the key was missing here, so the script failed fail-loud on KeyError)
+  label_datasets: ["mnist_784", "isolet", "cnae9", "swiss_roll", "iris", "helix", "breast_cancer", "letter"]
 
 # Q1 step 3 (reserse/2026-09-14_specifikace_rozsireni_q1.md, PART B) -
 # metric fidelity task with known ground truth: `src/datasets/synthetic_truth.py`
@@ -1433,3 +1883,511 @@ fig_metric_correlations:
   # interchangeable" (|Spearman rho|); used only for printing and
   # clustering, not for filtering.
   redundancy_threshold: 0.9
+
+# reserse/2026-09-17_zostreni_propozice2.md, section 10 - numerical
+# verification of Lemma 2/Veta 1 (identity + bound on the identifiability
+# gaps), Tvrzeni 3/4 (c_alpha, rho_NN), Veta 2 (dual certificate), and Veta 3
+# (local quadratic law I0), evaluated over ALREADY COMPLETED exp6_alpha_curves
+# embeddings (NO new DR run - reuses the loader/D/eps_D/theta/m/block logic of
+# exp8_prop2_check.py, same as that experiment reuses exp6_alpha_curves).
+# Called "E9"/"exp9_identifiability_check" in the reserse note; renamed here
+# to E10/exp10_identifiability_check to avoid a name collision with the
+# already-existing exp9_metric_fidelity. src/experiments/exp10_identifiability_check.py,
+# src/sammon/identifiability.py.
+exp10_identifiability_check:
+  # datasets/alpha_grid/n_max/seeds are NOT listed here - they come DIRECTLY
+  # from exp6_alpha_curves via resolve_experiment_config (YAML anchor
+  # convention, not a copy - see exp8_prop2_check.py). Only the FIRST seed of
+  # exp6_alpha_curves.seeds (per mode) is used as the canonical embedding
+  # seed: a row here is (dataset, alpha), not (dataset, alpha, seed) - the
+  # identity/bound/certificate/local-index are properties of ONE pair of
+  # configurations (Y_0*, Y_alpha*) at a time, reserse section 10 "Radek =
+  # (dataset, alpha)".
+  embedding_seed_index: 0
+  # Numerical tolerance for "eps_D is practically zero" (same role and value
+  # as exp8_prop2_check.eps_d_zero_tol - kept as an OWN copy here, not a
+  # cross-reference, matching the exp9_metric_fidelity convention of not
+  # coupling unrelated experiment blocks).
+  eps_d_zero_tol: 1.0e-12
+  # eta of the Veta 2 certificate (Delta'_alpha >= eta is certified for
+  # alpha >= alpha_eta) - 0.1 chosen as a round, interpretable 10% gain
+  # threshold (reserse section 5.1/9.3).
+  eta: 0.1
+  # relative tolerance of the local quadratic law check
+  # quadratic_law_holds := |Delta - alpha^2*I0_exact| <= quadratic_law_tol*Delta
+  # (reserse section 10; 0.3 chosen as a generous first pass - Veta 3 is
+  # OSNOVA/asymptotic, the article only reports the fraction where it holds,
+  # see fracExpNineQuadraticLawHolds in reserse section 9.3).
+  quadratic_law_tol: 0.3
+  # Hessian-based local index I0 needs an eigendecomposition of an (n*p x n*p)
+  # dense matrix (O((np)^3)) - skipped (NaN, hessian_skipped=True) for
+  # n > n_max_hessian. 400 chosen so the full run still covers every
+  # low-dimensional-manifold dataset (iris, wine, swiss_roll, helix, ... all
+  # n<=400) while skipping the large high-dimensional ones (mnist_784,
+  # isolet, n_max=2000) where I0 is least informative anyway (Veta 3 is a
+  # LOCAL statement near Y_0*, most relevant for the small/manifold regime).
+  n_max_hessian: 400
+  # Relative eigenvalue threshold for cutting the p(p+1)/2 rigid-motion
+  # directions from the Hessian/Gram pseudo-inverse (_pinv_quadratic_form) -
+  # 1e-8 is well above float64 eigh noise floor (~1e-14 relative) and well
+  # below the smallest genuine (non-rigid) eigenvalue observed on the
+  # three-point family unit test (n_cut must equal p(p+1)/2 exactly, checked
+  # by tests/test_exp10_identifiability.py).
+  hessian_pinv_rel_tol: 1.0e-8
+  # Bisection search for alpha_eta (Veta 2, general case R_near(witness)>0 -
+  # see identifiability.alpha_eta_threshold).
+  alpha_eta_bisection:
+    alpha_max: 50.0
+    xtol: 1.0e-6
+    # R_near(witness)/[R_near+R_mid+R_far](witness) below this is treated as
+    # 0 -> closed-form alpha_eta instead of bisection (reserse section 5.1).
+    near_zero_rel_tol: 1.0e-6
+  # Counterexample 1 (reserse sections 1.2b, 10) - Gaussian cluster + one
+  # outlier point, values as suggested in the reserse note (e.g. n=200,
+  # d=500, L=4). Used ONLY by tests/test_exp10_identifiability.py (a
+  # synthetic counterexample fixture, not part of the production experiment
+  # grid) - kept in config per the project rule "no magic numbers, even in
+  # test fixtures".
+  counterexample:
+    n_cluster: 199   # n = n_cluster+1 = 200 total points
+    d: 500
+    L: 4.0
+    seed: 20260917
+    alpha: 1.0
+    dilation_factor: 1.0   # M = dilation_factor * n (outlier pushed to distance ~n)
+    c_alpha_max: 0.35      # upper bound asserted for c_alpha ("small" in the reserse sense)
+  smoke:
+    # A NARROWER smoke than exp6_alpha_curves' own smoke (which runs ALL 32
+    # datasets): exp10 only needs to exercise every CODE PATH quickly, not
+    # every dataset (reserse section 10, "Smoke rezim: 2 datasety x alpha
+    # {0, 1}") - n_datasets/alpha_values SLICE the already-reused
+    # exp6_alpha_curves.smoke lists, they do not redefine them.
+    n_datasets: 2
+    alpha_values: [0.0, 1.0]
+    n_max_hessian: 150
+  quick:
+    n_max_hessian: 400
+
+# reserse/2026-09-17_zostreni_propozice2.md, section 10, "Analyzy" (analysis
+# items 2-6) - the analyses left DELIBERATELY out of
+# exp10_identifiability_check.py itself (that experiment only computes the
+# per-(dataset,alpha) row; unit=dataset statistics/permutation
+# tests/bootstrap CIs live here in src/experiments/exp10_identifiability_stats.py).
+# Output: results/data/[<mode>/]exp10_identifiability_stats.csv (analysis
+# items 3-5) + results/tables/[<mode>/]exp10_identifiability_table.csv/.tex
+# (item 2, per-dataset table for alpha_table).
+exp10_identifiability_stats:
+  seed: 20260917
+  # H1 (Spearman, permutation p) - 10^4 permutations per correlation, as
+  # specified in reserse section 7.2/10.
+  n_perm: 10000
+  # regression slope CI (item 3) and H2 phi CI (item 4) - cluster/percentile
+  # bootstrap, resampling DATASETS with replacement.
+  n_boot: 10000
+  ci_level: 0.95
+  # alpha values of the per-dataset table (analysis item 2) - intersected
+  # with whatever alpha values are actually present in the exp10 CSV (so a
+  # narrower quick/smoke alpha grid does not raise, only logs a WARNING for
+  # the missing ones).
+  alpha_table: [1.0, 2.0, 3.0]
+  # quadratic-law tolerance (analysis item 5) is READ from
+  # exp10_identifiability_check.quadratic_law_tol (same threshold as the
+  # per-row quadratic_law_holds column) - not duplicated here.
+  smoke:
+    n_perm: 200
+    n_boot: 200
+  quick:
+    n_perm: 2000
+    n_boot: 2000
+
+# 2026-09-17 fix (author: legend s >20 polozkami [alpha x holds/fails]
+# zakryvala levou polovinu grafu) - src/figures/fig_identifiability_law.py:
+# color=alpha now goes through a continuous colorbar instead of one legend
+# entry per alpha value; the legend keeps at most 3 entries (law holds/
+# fails, slope-1 reference line).
+fig_identifiability_law:
+  # Perceptually-uniform, colorblind-safe sequential colormap for the
+  # continuous alpha colorbar (Okabe-Ito is a discrete 8-color palette, not
+  # usable for a continuous scale here).
+  colormap: "viridis"
+  # Legend placement (matplotlib loc string) - chosen so it sits in a
+  # low-density corner of the log-log scatter (see the task's PDF-crop
+  # verification requirement), not on top of the diagonal point band.
+  legend_loc: "lower right"
+
+# documentation/2026-09-17_zadani_exp11_konvergence.md - diagnostic follow-up
+# on the 13/384 exp10_identifiability_check rows (alpha>0) with
+# both_gaps_nonneg==False (a negative Delta or Delta_prime), which per Veta 1
+# must be non-negative at the global minimizer. Splits the violations into
+# "tolerance of the solver" vs. "SMACOF converged to a different local
+# minimum" by recomputing SMACOF with a tighter stopping criterion (variant
+# 'tight') and, if that does not clear the negative gap, with a CROSS
+# (warm-start) initialization from the OTHER alpha's cached optimum (variant
+# 'warm') - see exp11_convergence_check.py module docstring for the exact
+# per-variant definition.
+#
+# IMPORTANT: unlike other experiments, the (dataset, alpha) targets here and
+# the reference E10 values used for baseline reproduction ALWAYS come from
+# the FULL production exp6_alpha_curves/exp10_identifiability_check runs,
+# regardless of exp11_convergence_check's OWN --quick/--smoke/--full mode -
+# this experiment re-diagnoses a FIXED, already-identified set of violating
+# rows from the completed full run, not a scaled-down recomputation of new
+# data. exp11's own mode only controls how many (dataset, alpha) targets are
+# processed and how tight/loose the 'tight'/'warm' solver budget is, so that
+# --smoke exercises the full code path quickly (glass has n=214, so even a
+# tight SMACOF re-fit is fast).
+exp11_convergence_check:
+  # (dataset, alphas) pairs with a non-negativity violation in exp10 (see
+  # results/data/exp10_identifiability_check_results.csv, both_gaps_nonneg).
+  # Fixed here on purpose (NOT re-derived from the E10 CSV at run time) - see
+  # module docstring above: re-deriving it would make the experiment change
+  # under our feet on every E10 recompute.
+  targets:
+    - dataset: glass
+      alphas: [0.75, 1.0]
+    - dataset: yeast
+      alphas: [0.25, 0.75, 1.0, 1.25]
+    - dataset: digits
+      alphas: [0.25]
+    - dataset: mnist_784
+      alphas: [0.25, 0.5, 0.75]
+    - dataset: optdigits
+      alphas: [0.25]
+    - dataset: cnae9
+      alphas: [0.25]
+    - dataset: usps
+      alphas: [0.25]
+  # SMACOF stopping criterion for the 'tight'/'warm' variants (max_iter=5000,
+  # tol=1e-10, vs. exp6_alpha_curves.max_iter=300/tol=1e-4 used to produce
+  # the cached 'baseline' embeddings) - a two-orders-of-magnitude tighter
+  # tolerance and a 16x larger iteration budget, chosen to make "still
+  # negative after this" a meaningful statement about a different local
+  # minimum rather than about an under-converged run.
+  tight:
+    max_iter: 5000
+    tol: 1.0e-10
+  # Numerical tolerance for the 'baseline' variant reproducing
+  # results/data/exp10_identifiability_check_results.csv exactly (same D,
+  # eps_D, and cached Y_0*/Y_alpha* -> bit-for-bit reproducible up to
+  # floating-point summation order) - a mismatch beyond this is a fail-loud
+  # bug (we are not computing what E10 computed), not a numerical variant.
+  # RELATIVE tolerance (also used as an absolute floor). Must NOT be absolute:
+  # the stress fields are ~1e4, where one ulp is already ~2e-12, so an
+  # absolute 1e-12 bound can never be met by a correct computation.
+  baseline_match_tol: 1.0e-9
+  smoke:
+    # A single already-known violating row (glass, alpha=1.0) - enough to
+    # exercise baseline/tight/warm end-to-end quickly; glass is small
+    # (n=214), so even a loose smoke SMACOF budget below finishes in seconds.
+    targets:
+      - dataset: glass
+        alphas: [1.0]
+    tight:
+      max_iter: 200
+      tol: 1.0e-6
+
+# E12 (documentation/2026-09-17_zadani_exp12_prodlouzeni_mrizky.md) -
+# extension of the exp6_alpha_curves alpha grid beyond alpha=3: 11/51
+# datasets had their auc_rnx optimum exactly on E6's right grid edge. Fit
+# hyperparameters (seeds, n_max, max_iter, tol, eps_D_q, device,
+# n_components) are NOT duplicated here - exp12_alpha_grid_extension.py
+# always reads them from the FULL exp6_alpha_curves block above, regardless
+# of exp12's own --quick/--smoke/--full mode (see the module docstring), so
+# E6 and E12 rows of the same (dataset, alpha, seed) stay comparable.
+exp12_alpha_grid_extension:
+  # Datasets whose exp6 optimum sits at or near the alpha=3 cap, plus interior
+  # controls. Explicit list on purpose: deriving it from exp6 at runtime would
+  # silently change the experiment whenever exp6 is recomputed.
+  datasets:
+    - anisotropic_ellipsoid
+    - banknote
+    - helix
+    - iris
+    - klein_bottle_4d
+    - mfeat_morphological
+    - mobius_strip
+    - s_curve
+    - seeds
+    - sphere
+    - swiss_roll
+    - torus
+    - trefoil_knot
+    - twin_peaks
+    # interior-optimum controls
+    - wall_robot
+    - wine
+    - swiss_roll_hole
+    - ionosphere
+  # Extension only - the 0..3 part already exists in exp6 and is NOT recomputed.
+  alpha_grid: [3.25, 3.5, 3.75, 4.0, 4.25, 4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0]
+  # Numerical ceiling: log10(rho(alpha)) stays below ~13 for every target
+  # dataset up to alpha=6 (float64 has ~16 valid digits) - see the "numerical
+  # ceiling" table in the zadani document. Rows above this threshold are
+  # still written to the CSV (flagged via numerically_reliable=False), never
+  # silently dropped.
+  reliability_log10_max: 14.0
+  smoke:
+    datasets: [iris]
+    alpha_grid: [3.25, 3.5]
+
+# documentation/2026-09-17_zadani_exp13_preziti_sousedu.md - "how many of the
+# k nearest neighbors survive the projection to 2D", the plain-language
+# companion to auc_rnx/knn_jaccard_k7/q_global. Datasets/seed(s)/source
+# experiment name are NOT duplicated here - taken directly from
+# exp6_alpha_curves via resolve_experiment_config, same convention as
+# exp10_identifiability_check (embedding_seed_index selects ONE canonical
+# seed out of exp6_alpha_curves.seeds, a row here is (dataset, alpha, k),
+# not averaged over seeds).
+exp13_neighbor_survival:
+  embedding_seed_index: 0
+  k_values: [7]              # k=7 matches trustworthiness_k7/knn_jaccard_k7
+  alpha_table: [0.0, 1.0, 2.0]   # fixed policies shown as table rows
+  smoke:
+    k_values: [7]
+    alpha_table: [0.0, 1.0]
+
+# documentation/2026-09-17_zadani_exp14_robustnost_konvergence.md - does the
+# key claims of exp10_identifiability_check survive filtering out rows whose
+# |Delta|/|Delta_prime| are below the SMACOF convergence residual measured by
+# exp11_convergence_check (E11 found: the cached exp6_alpha_curves embeddings
+# still had a median 0.6% residual stress decline under a much tighter
+# stopping criterion, larger than |Delta| itself on 11/12 comparable rows)?
+# Pure filtering/recompute over the ALREADY COMPLETED
+# results/data/exp10_identifiability_check_results.csv and
+# results/data/exp11_convergence_check_results.csv (always the FULL
+# production files, regardless of exp14's own --quick/--smoke/--full mode -
+# same convention as exp11_convergence_check.py reading the FULL exp6/exp10
+# outputs - see that module's docstring) - NO new embedding/solver run.
+exp14_convergence_robustness:
+  thresholds: [0.0, 1.0e-4, 1.0e-3, 6.0e-3, 1.0e-2, 3.0e-2]
+  # Numerical tolerance for the tau=0 row reproducing
+  # results/data/exp10_identifiability_check_results.csv (frac_both_gaps_nonneg,
+  # med_tight_v1, med_tight_sandwich, n_nontrivial_alpha_one) and
+  # results/data/exp10_identifiability_stats.csv (H1_spearman rho,
+  # cGammaTildeZero_vs_G_auc_oracle) exactly - RELATIVE tolerance (also used
+  # as an absolute floor), same reasoning as exp11_convergence_check.baseline_match_tol:
+  # these quantities are not all order-1 (e.g. tight_v1 medians ~5e-3), but an
+  # absolute bound chosen for one field's magnitude can silently be wrong for
+  # another - see documentation/2026-09-17_zadani_exp14_robustnost_konvergence.md,
+  # section "PAST".
+  baseline_match_tol: 1.0e-9
+  # Same permutation-test convention/count as exp10_identifiability_stats.n_perm
+  # (H1 Spearman), so the rho/p at tau=0 use the SAME method (rho is exactly
+  # reproducible; the permutation p is not bit-identical to
+  # exp10_identifiability_stats.csv's own p, because it uses exp14's OWN seed
+  # below, not exp10_identifiability_stats.seed=20260917 - only rho is part of
+  # the fail-loud tau=0 reproduction check, not p, see the module docstring).
+  n_permutations: 10000
+  seed: 0
+  smoke:
+    thresholds: [0.0, 1.0e-2]
+    n_permutations: 100
+
+# Flagship figure (author 2026-09-17): ONE picture showing the core problem
+# "metric methods keep distances but shred neighborhoods" - 3 panels, same
+# dataset, same original-space k-NN structure examined around ONE probe
+# point on MDS(alpha=0) / alpha-Sammon (tuned) / t-SNE
+# (src/figures/fig_neighborhood_problem.py). Message is a TRADE-OFF
+# ("weighting is a knob between two goals"), never "our method wins" -
+# t-SNE panel 3 has the BEST neighbor survival AND the WORST stress, on
+# purpose (see that script's module docstring).
+#
+# dataset='helix' chosen over 's_curve' after rendering both with edges
+# (see the task's visual-comparison requirement): helix's ring/spiral
+# projections are more symmetric across all 3 panels and show a starker,
+# cleaner MDS-tangle vs. tuned-order contrast; s_curve's numeric trade-off
+# is slightly more monotonic (stress and neighbors both climb MDS -> tuned
+# -> t-SNE) but the picture itself is visually less striking.
+fig_neighborhood_problem:
+  dataset: helix
+  # k=7 matches exp13_neighbor_survival's headline number (same "neighbors
+  # kept out of k" quantity, recomputed here directly from the cached
+  # embeddings via src.sammon.metrics.knn_overlap_count - never read off
+  # exp13's output CSV, so this figure has no dependency on exp13 having
+  # been (re)run in the same mode).
+  k_neighbors: 7
+  # canonical embedding seed - same as exp13_neighbor_survival.embedding_seed_index
+  # -> exp6_alpha_curves.seeds[0].
+  seed: 0
+  # panel 1: MDS = alpha-Sammon at alpha=0 (exp6_alpha_curves cache).
+  mds_alpha: 0.0
+  # panel 2: the "tuned" alpha for this dataset. helix's oracle alpha_best in
+  # results/data/exp13_neighbor_survival_results.csv is alpha=3.5 (from
+  # exp12_alpha_grid_extension), but 3.5 is NOT a point of the article's own
+  # alpha_auto search grid {0, 0.25, ..., 3} (numAlphaGridPoints=13,
+  # subsec:alpha_selection) - a reviewer correctly flagged that showing an
+  # off-grid value in the flagship figure is inconsistent with the method as
+  # described in the text. Use alpha=3.0, the LARGEST grid point, instead
+  # (from exp6_alpha_curves, which already covers 0..3): verified directly
+  # from the cached embeddings (helix, seed=0, k=7) that the illustrated
+  # phenomenon survives essentially unchanged at the in-grid value:
+  # neighbors_kept=5.49/7 at alpha=3.0 vs. 5.53/7 at alpha=3.5 (both up from
+  # 2.17/7 at alpha=0), stress=0.0228 vs. 0.0284. Author reviewer fix, 2026-09-18.
+  tuned_alpha: 3.0
+  tuned_alpha_experiment: exp6_alpha_curves
+  # panel 3: t-SNE, default hyperparameters (exp1_dr_benchmark cache).
+  tsne_method: tsne
+  # Author feedback 2026-09-17 (FOURTH review, MEASURED, not guessed): on the
+  # full helix/alpha=0 cache, a probe's true k=7 original-space neighbors do
+  # NOT end up far away (median rank of a true neighbor in the embedding's
+  # own order is only 13, and its distance is a median 3.8x / 90th-pct 10.5x
+  # the embedding's own local point spacing) - they get "true neighbors
+  # crowded out by intruding points" close to the probe, not "true
+  # neighbors pushed to the far side of the map". Drawing edges at the
+  # scale of the whole panel can therefore never show the failure (the
+  # edges are always short relative to the panel). Fix: for ONE probe point
+  # (n_probes=1 - 4 probes crowded out the zoom itself), zoom into a window
+  # around it (radius = zoom_radius_local_spacing_multiple * the embedding's
+  # OWN median nearest-neighbor spacing, so the window means the same
+  # relative thing in every panel despite wildly different absolute
+  # coordinate scales between MDS/alpha-Sammon/t-SNE) and mark, inside that
+  # window, which nearby points are the probe's TRUE original-space
+  # neighbors vs. INTRUDERS (points among the probe's k embedding neighbors
+  # that are not true neighbors) - see fig_neighborhood_problem.py's
+  # `_zoom_roles`/`_local_spacing`/module docstring.
+  n_probes: 1
+  probe_marker_size: 30.0     # scatter `s=` for the probe marker IN THE MAIN PANEL (point_size=4.0 for regular points)
+  probe_marker_edgewidth: 1.0 # black outline width on the main-panel probe marker
+  point_size: 4.0
+  point_cmap: viridis
+  # zoom inset (see the FOURTH-review note above): radius as a MULTIPLE of
+  # the panel's own median nearest-neighbor spacing - 10.0 comfortably
+  # covers the measured 90th-percentile true-neighbor distance (10.5x) so
+  # nearly all k=7 true neighbors fall inside the window in every panel.
+  zoom_radius_local_spacing_multiple: 10.0
+  # Author feedback 2026-09-17 (FIFTH review, on the smoke render): the
+  # 46%/"upper left" inset OVERLAPPED real ring points (helix projects to a
+  # ring/annulus in every panel, so a corner inset sits ON TOP of the ring
+  # unless it is tiny), and role markers were so big that 14 points (worst
+  # case: MDS panel, full data, 7 true neighbors + 7 intruders) turned into
+  # an unreadable blob. Fix, MEASURED on full cached embeddings (never
+  # guessed - see the scratchpad verification the task required): a helix
+  # ring has a COMPLETELY EMPTY hole around its own centroid out to at
+  # least 20-25% of the panel's half-width in all 3 panels (checked
+  # per-panel, since MDS/tuned/t-SNE project the ring at very different
+  # scales) - `zoom_inset_loc: "center"` + `zoom_inset_size_pct` well under
+  # that (so the inset box, whose half-width is `zoom_inset_size_pct/2` of
+  # the panel width, never reaches the ring) puts the whole inset in
+  # naturally blank space, and the mark_inset connector lines (center -> a
+  # point ON the ring) stay inside that same empty disk for their entire
+  # length, never crossing another point.
+  zoom_inset_size_pct: 36.0        # inset_axes width=height="<...>%" of the parent panel - inset half-width = 18% of panel half-width, inside the >=20-25% empty-hole margin measured on full data (all 3 panels, with margin) - see the note above
+  zoom_inset_loc: "center"         # the ring's own empty hole (see note above) - NOT a corner, which sits on top of ring data
+  zoom_mark_inset_loc1: 2          # mark_inset connector corners (1=upper right,2=upper left,3=lower left,4=lower right) - lines run through the empty hole regardless of corner choice (verified), 2/4 = a single clean diagonal
+  zoom_mark_inset_loc2: 4
+  # Marker sizes re-measured against the WORST CASE (MDS panel, full data:
+  # 7 true neighbors + 7 intruders + 1 probe = 15 markers in one small
+  # inset - see the FIFTH-review note above), NOT the smoke sample (which
+  # only ever showed 1-2 intruders and looked fine at any size). SIXTH
+  # REVIEW (author 2026-09-17): 13/24pt markers at 28% inset size still
+  # blobbed together; two of the 15 markers happen to be genuinely
+  # near-coincident in the MDS embedding (0.20x local_spacing apart - a
+  # real feature of the data: two of the probe's true neighbors collapsed
+  # almost onto each other - no marker size can fully separate that one
+  # pair without becoming invisible, but it stays visually distinguishable
+  # as "2 diamonds" via the visible corner of each). At 8/16pt + a slightly
+  # larger 36% inset, ALL OTHER 13 of the 15 worst-case markers are cleanly
+  # separated and individually countable (verified in the scratchpad render
+  # required by the task - see the task's response for the exact count).
+  zoom_point_size: 3.0             # regular (non-role) point marker size INSIDE the inset
+  zoom_true_neighbor_size: 8.0     # role (b): probe's true original-space k-NN, marker size inside the inset
+  zoom_intruder_size: 8.0          # role (c): probe's embedding k-NN that are NOT true neighbors ("vetrelci"), marker size inside the inset
+  zoom_probe_size: 16.0            # role (a): the probe point itself inside the inset - biggest marker, black outline
+  zoom_marker_edgewidth: 0.4
+  # smoke: exp6_alpha_curves/exp1_dr_benchmark's own --smoke configs DO
+  # cover 'helix' (unlike --quick, which omits it entirely - see
+  # config_experiments.yaml exp1_dr_benchmark.quick/exp6_alpha_curves.quick
+  # datasets lists), but with a narrower alpha grid (0/1/2/3, no
+  # exp12_alpha_grid_extension) and tsne_auto instead of tsne (E1 smoke's
+  # reduced_methods) - so --quick is not usable for this figure out of the
+  # box (see the module docstring), only --smoke/--full.
+  smoke:
+    tuned_alpha: 3.0
+    tuned_alpha_experiment: exp6_alpha_curves
+    tsne_method: tsne_auto
+
+# Demsar (2006, JMLR 7:1-30, Fig. 1) critical-difference diagram
+# (src/figures/fig_cd_diagram.py) - author feedback 2026-09-17: the previous
+# version drew one bar per pairwise insignificant comparison (30+ stacked
+# bars) instead of one bar per MAXIMAL clique of methods that are mutually
+# not significantly different, and labels overlapped the bars. All layout
+# constants below are in INCHES (figure width is fig_common.WIDTH_FULL_WIDTH_IN;
+# height is derived from these constants and the number of label rows/clique
+# bars, so no magic number sits in the plotting code itself).
+fig_cd_diagram:
+  top_margin_in: 0.95        # room above the axis for the (2-line) title + the CD reference bar
+  title_depth_in: 0.14       # distance of the (2-line) title text below the TOP of the figure
+  cd_reference_depth_in: 0.64  # distance of the CD reference bar below the top of the figure
+  # author feedback 2026-09-17 (second review): critical-difference bars must
+  # sit right under the axis (Demsar 2006 Fig. 1 layout), NOT below the
+  # label fan-out - otherwise the reader cannot see which axis points a bar
+  # connects. Depth order is axis -> axis_tick_gap_in -> clique bars ->
+  # clique_gap_in -> method labels (see fig_cd_diagram._draw_cd_diagram).
+  axis_tick_gap_in: 0.14     # axis line -> first critical-difference bar (or first label row if there are no bars)
+  clique_row_height_in: 0.20 # one row per critical-difference bar (maximal clique)
+  clique_gap_in: 0.14        # last critical-difference bar -> first row of method labels
+  label_row_height_in: 0.20  # one row per "fanned-out" method label (left and right side)
+  bottom_margin_in: 0.12
+  left_margin_in: 1.55       # reserved for left-side (better-ranked half) method labels
+  right_margin_in: 1.55      # reserved for right-side (worse-ranked half) method labels
+  label_gap_in: 0.05         # axis edge -> label text anchor
+  marker_size_pt: 16
+  axis_linewidth: 1.0
+  tick_linewidth: 0.8
+  tick_length_in: 0.055
+  connector_linewidth: 0.6
+  clique_bar_linewidth: 3.2
+  cd_reference_linewidth: 1.8
+  label_fontsize_pt: 6.5
+  tick_fontsize_pt: 6.0
+  title_fontsize_pt: 7.0
+  # Okabe-Ito indices (fig_common.OKABE_ITO) used for the plot elements.
+  axis_color_index: 0     # black - axis line, ticks, points, connectors
+  clique_bar_color_index: 5   # blue "#0072B2" - critical-difference bars
+  cd_reference_color_index: 6 # vermillion "#D55E00" - the CD reference bar (visually distinct from clique bars)
+
+# E15 "downstream discovery task" (author request 2026-09-18, motivated by
+# a DAMI editor comment: "there is not a single task in the whole
+# manuscript where a better map leads to a better FINDING"). Two questions
+# per labeled dataset - Q1 `nearest_class_pair`, Q2 `most_dispersed_class`
+# (definitions and class-count thresholds in src/sammon/discovery_task.py,
+# reusing the K2 cluster-geometry aggregates) - answered from the ALREADY
+# SAVED exp1_dr_benchmark embeddings (NO new DR run), for methods in
+# report.main_methods (single source of truth, not duplicated here).
+# src/experiments/exp15_discovery_task.py.
+exp15_discovery_task:
+  # Relative tolerance for flagging an (informational-only) exact tie
+  # between the best and runner-up candidate answer in either D_in or
+  # D_out - recorded in tie_in_truth/tie_in_prediction but never changes
+  # which answer is scored as correct (deterministic stable-sort tiebreak,
+  # see discovery_task._pick_extremum).
+  tie_relative_tolerance: 1.0e-9
+  quick:
+    max_datasets: 4
+  smoke:
+    max_datasets: 3
+
+# Paired statistics over exp15_discovery_task_results.csv
+# (src/experiments/exp15_discovery_task_stats.py). Unit of analysis =
+# DATASET (per docs/CLAUDE.md rule against pseudoreplication) - seeds are
+# aggregated to one value per (dataset, method, question) via the MEDIAN
+# BEFORE any comparison across datasets. `reference_method` is compared
+# against every OTHER method in report.main_methods (no separate baseline
+# list here - single source of truth), Holm-corrected within each
+# question's family (m = number of baselines for that question).
+exp15_discovery_task_stats:
+  reference_method: sammon_alpha_pred
+  # Below this many datasets with a defined paired value for BOTH methods,
+  # a pairwise test (McNemar for the hard score, Wilcoxon signed-rank for
+  # the soft rho) is skipped for that (method, question) pair rather than
+  # reporting a degenerate/undefined p-value.
+  min_paired_datasets: 3
+  alpha: 0.05
+  # statsmodels.stats.contingency_tables.mcnemar: exact (binomial) test up
+  # to this many discordant pairs, chi2 with continuity correction above it
+  # (matches statsmodels' own recommended cutover, see its docstring).
+  mcnemar_exact_max_n: 25
+  quick:
+    min_paired_datasets: 2
+  smoke:
+    min_paired_datasets: 2

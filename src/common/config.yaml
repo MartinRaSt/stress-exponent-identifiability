@@ -542,6 +542,48 @@ figures:
     # deterministic seed.
     csv_max_points_per_panel: 500
     csv_subsample_seed: 42
+  # Author feedback 2026-09-17: ~46 orphan PDFs had accumulated in
+  # clanek/img/ (incl. ~30 temporal-trajectory variants) that the article
+  # never \includegraphics-references - violates "nothing without a
+  # reference in the text exists" and the validator flags them before
+  # submission. `save_figure()` (src/figures/fig_common.py) now copies a
+  # figure into clanek/img/ (mode='full' only) ONLY if its name is listed
+  # here; results/figures/ still always gets EVERY figure (nothing is
+  # lost, only what is mirrored into the article changes). Derived by:
+  #   grep -rhoE 'includegraphics\[[^]]*\]\{([^}]+)\}' clanek --include=*.tex
+  # (see documentation/2026-09-17_zadani_ctyri_ukoly_na_obrazcich.md) plus,
+  # per the same task, figures not yet wired into the text with \ref but
+  # already produced/expected: fig_neighborhood_problem, fig_neighbor_survival,
+  # fig_cd_diagram_* (solver/experiment-comparison CD diagrams, one file per
+  # experiment/metric pair - src/figures/fig_cd_diagram.py), and the two
+  # SVG->PDF graphical-abstract/study-design figures (graphical_abstract,
+  # study_design - produced by clanek/img/src/make_*.{bat,sh}, NOT by
+  # save_figure, but listed here too so this list stays the single
+  # authoritative record of "everything legitimately in clanek/img/").
+  # A trailing '*' matches by prefix (for the per-page/per-experiment
+  # figure families below) - see `_is_article_figure` in fig_common.py.
+  # Existing orphan PDFs already in clanek/img/ are NOT deleted by this
+  # change (author decides that separately) - this only stops NEW ones from
+  # being copied in on the next run.
+  article_figures:
+    - fig_alpha_curves_all_p1
+    - fig_alpha_curves_all_p2
+    - fig_alpha_gain_by_regime
+    - fig_faithful_map
+    - fig_graph_layouts
+    - fig_identifiability_law
+    - fig_pareto_front
+    - fig_regime_map
+    - fig_runtime_scaling
+    - fig_sgd_convergence
+    - fig_temporal_pareto
+    - method_overview
+    - fig_neighborhood_problem
+    - fig_neighbor_survival
+    - fig_discovery_task
+    - graphical_abstract
+    - study_design
+    - "fig_cd_diagram_*"
 
 experiments:
   exp0_smoke:

@@ -1,0 +1,34 @@
+@echo off
+REM Project: Sammon mapping revisited - adaptive weighting, a scalable solver
+REM          and a temporal extension (alpha-Sammon)
+REM Authors: Martin Radvansky <martin.radvansky@vsb.cz>
+REM          Martin Radvansky, Jr. <martin.radvansky1@vsb.cz>
+REM Affiliation: Department of Computer Science, Faculty of Electrical Engineering
+REM              and Computer Science, VSB - Technical University of Ostrava,
+REM              17. listopadu 2172/15, 708 00 Ostrava-Poruba, Czech Republic
+REM Created: 2026-09-17
+REM License: see the LICENSE file in the repository root
+REM
+REM Runs exp10 (numerical identifiability check of the stress exponent,
+REM reserse/2026-09-17_zostreni_propozice2.md section 10,
+REM src/experiments/exp10_identifiability_check.py) ->
+REM results/data/[<mode>/]exp10_identifiability_check_results.csv + _DONE.txt.
+REM NO new DR computation - only loads .npy embeddings and the original data.
+REM Requires COMPLETED exp6_alpha_curves AND exp8_prop2_check runs in the
+REM SAME mode (otherwise fail-loud on missing inputs). Parameter: quick|full|smoke (default full).
+setlocal
+cd /d "%~dp0.."
+REM Disable computer standby/hibernation for the duration of the run (restored at the
+REM end, even after an error) - author requirement, see src/common/no_sleep_on.bat.
+call "%~dp0common\no_sleep_on.bat"
+REM Limit BLAS threads to 1 per process (see config.yaml parallel.blas_threads_per_worker)
+set OPENBLAS_NUM_THREADS=1
+set OMP_NUM_THREADS=1
+set MKL_NUM_THREADS=1
+set NUMEXPR_NUM_THREADS=1
+set MODE=%1
+if "%MODE%"=="" set MODE=full
+"venv\python.exe" -m src.experiments.exp10_identifiability_check --%MODE%
+set "EXIT_CODE=%ERRORLEVEL%"
+call "%~dp0common\no_sleep_off.bat"
+exit /b %EXIT_CODE%

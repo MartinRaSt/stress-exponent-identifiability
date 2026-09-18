@@ -52,7 +52,7 @@ import pandas as pd
 from src.common.config import get_generated_dir, get_mode_path, load_config
 from src.common.logging_utils import get_logger
 from src.experiments import exp4_common
-from src.experiments.config_experiments import load_experiments_config
+from src.experiments.config_experiments import load_experiments_config, resolve_experiment_config
 from src.experiments.exp_common import parse_mode_args
 from src.experiments.report_tables import (
     EXP1_MAIN_TABLE,
@@ -124,6 +124,10 @@ _CLUSTER_GEOMETRY_SPECS = [
 # (metric, direction, ASCII name) for the win counts Sammon/MDS family vs. neighbor family
 _WIN_METRIC_SPECS = [
     ("shepard_pearson_r", "max", "ShepardPearson"),
+    # The main table reports Shepard rho as SPEARMAN, so the win count quoted
+    # next to it must use the same coefficient; the Pearson variant above is
+    # kept because other parts of the text refer to it.
+    ("shepard_spearman_rho", "max", "ShepardSpearman"),
     ("kruskal_stress1", "min", "KruskalStressOne"),
     ("stress_scale_invariant", "min", "StressScaleInvariant"),
     ("q_global", "max", "Qglobal"),
@@ -209,14 +213,26 @@ def num_to_words(x: float | int | str) -> str:
     return "".join(out)
 
 
+# Magnitudes outside this range are written in scientific notation. Inside it,
+# fixed decimal notation stays (unchanged formatting of every number already in
+# the article); outside it, fixed notation is unusable - a p-value of 2.8e-190
+# became 190 decimal places and siunitx rejected it as an invalid number.
+SCIENTIFIC_MIN_MAGNITUDE = -6
+SCIENTIFIC_MAX_MAGNITUDE = 9
+
+
 def fmt_sig(x: float, sig: int = 3) -> str:
-    """Formats a number to `sig` significant digits, ALWAYS fixed decimal
-    notation (no 'e' - LaTeX-unsafe), no thousands separators."""
+    """Formats a number to `sig` significant digits without thousands
+    separators. Fixed decimal notation is used for ordinary magnitudes and
+    scientific notation ('e') for extreme ones; both are parsed by siunitx
+    `\\num{...}`, which wraps every decimal value (see `_wrap_decimal`)."""
     if not np.isfinite(x):
         raise ValueError(f"Number is not finite (NaN/Inf) - cannot format for a macro: {x}")
     if x == 0:
         return "0"
     magnitude = math.floor(math.log10(abs(x)))
+    if magnitude < SCIENTIFIC_MIN_MAGNITUDE or magnitude > SCIENTIFIC_MAX_MAGNITUDE:
+        return f"{x:.{max(sig - 1, 0)}e}"
     decimals = max(sig - 1 - magnitude, 0)
     rounded = round(x, decimals)
     if decimals == 0:
@@ -387,6 +403,161 @@ def _add_win_counts(mc: MacroCollector, data_dir: Path, neighbor_methods: list[s
                 f"exp1_dr_benchmark_results.csv, {metric}, best of stress-family vs. best of neighbor-family per dataset (median over seeds)",
             )
     mc.try_block("win counts Sammon/MDS family vs. neighbor family", block)
+
+
+def _add_alpha_zero_vs_one(mc: MacroCollector, data_dir: Path) -> None:
+    """Paired per-dataset comparison of alpha=0 against Sammon's alpha=1.
+
+    The marginal medians reverse this comparison (see the caption of the main
+    table): a method can have the better marginal median and still lose on most
+    datasets pairwise, because datasets differ in stress scale. Claims about
+    alpha=1 being a poor default must therefore rest on these paired counts.
+    """
+    def block() -> None:
+        e1 = _read_csv_required(data_dir / "exp1_dr_benchmark_results.csv")
+        specs = [("stress_scale_invariant", "min", "Stress"), ("auc_rnx", "max", "Aucrnx")]
+        for metric, direction, macro_stub in specs:
+            if metric not in e1.columns:
+                mc.logger.warning("alpha0-vs-alpha1: column '%s' missing, skipping.", metric)
+                continue
+            wide = _median_across_seeds(e1, metric)
+            if "sammon_alpha0_smacof" not in wide.columns or "sammon_alpha_smacof" not in wide.columns:
+                mc.logger.warning("alpha0-vs-alpha1: required method columns missing, skipping.")
+                return
+            both = wide[["sammon_alpha0_smacof", "sammon_alpha_smacof"]].dropna()
+            if direction == "min":
+                wins = int((both["sammon_alpha0_smacof"] < both["sammon_alpha_smacof"]).sum())
+            else:
+                wins = int((both["sammon_alpha0_smacof"] > both["sammon_alpha_smacof"]).sum())
+            mc.add(
+                f"numAlphaZeroBeatsAlphaOne{macro_stub}", f"{wins}/{both.shape[0]}",
+                f"exp1_dr_benchmark_results.csv, {metric}, PAIRED per-dataset count where alpha=0 beats alpha=1 (median over seeds); the marginal median reverses this comparison",
+            )
+    mc.try_block("paired alpha=0 vs alpha=1 (marginal medians reverse it)", block)
+
+
+def _add_alpha_pred_distribution(mc: MacroCollector, data_dir: Path, mode: str) -> None:
+    """How many datasets the rule assigns to each of its three exponents.
+
+    Guards the claim about how often the rule reduces to plain MDS: the text
+    used to say "on most datasets", which the distribution contradicts.
+    """
+    def block() -> None:
+        from src.experiments.exp1_regime_stratified import classify_regime  # noqa: F401
+        from src.sammon.alpha_predict import load_alpha_pred_rule, predict_alpha
+
+        props_path = data_dir / "dataset_properties.csv"
+        props = _read_csv_required(props_path)
+        props = props[(props["kind"] == "vector") & props["nn_ratio_k1"].notna()]
+        rule = load_alpha_pred_rule()
+        picks = [float(predict_alpha(float(v), rule)) for v in props["nn_ratio_k1"]]
+        coefficients = rule.get("coefficients", {})
+        for name, key in (("Low", "a_low"), ("Mid", "a_mid"), ("High", "a_high")):
+            if key not in coefficients:
+                mc.logger.warning("alpha_pred distribution: rule has no '%s', skipping.", key)
+                continue
+            value = float(coefficients[key])
+            count = sum(1 for p in picks if abs(p - value) <= 1e-9)
+            mc.add(
+                f"numAlphaPredPicks{name}", count,
+                f"dataset_properties.csv (kind=vector) + alpha_pred_rule.json, number of datasets where the rule returns {key}={value:g}",
+            )
+        mc.add(
+            "numAlphaPredPicksNonzero", sum(1 for p in picks if p > 0.0),
+            "dataset_properties.csv (kind=vector) + alpha_pred_rule.json, number of datasets where the rule returns a NONZERO exponent",
+        )
+    mc.try_block("alpha_pred distribution over datasets", block)
+
+
+def _add_alpha_pred_on_graphs(mc: MacroCollector, data_dir: Path) -> None:
+    """How the rule behaves on graph distances.
+
+    The text claimed the rule returns alpha=0 on graphs because their rho_NN lies
+    above the upper threshold - while citing a rho_NN range that extends well
+    below it. These macros state what the rule actually does.
+    """
+    def block() -> None:
+        from src.sammon.alpha_predict import load_alpha_pred_rule, predict_alpha
+
+        props = _read_csv_required(data_dir / "dataset_properties.csv")
+        graphs = props[(props["kind"] == "graph_distance") & props["nn_ratio_k1"].notna()]
+        rule = load_alpha_pred_rule()
+        picks = [float(predict_alpha(float(v), rule)) for v in graphs["nn_ratio_k1"]]
+        zero = sum(1 for p in picks if p == 0.0)
+        mc.add("numAlphaPredGraphsZero", f"{zero}/{len(picks)}",
+               "dataset_properties.csv (kind=graph_distance) + alpha_pred_rule.json, graph units where the rule returns alpha=0")
+        mc.add("numAlphaPredGraphsNonzero", len(picks) - zero,
+               "dataset_properties.csv (kind=graph_distance) + alpha_pred_rule.json, graph units where the rule returns a NONZERO exponent")
+    mc.try_block("alpha_pred on graph distances", block)
+
+
+def _add_high_regime_no_gain(mc: MacroCollector, data_dir: Path) -> None:
+    """In the concentrated regime, does even the grid optimum gain anything?
+
+    The rule returns alpha=0 there. The theorem justifies that only through
+    CV(D), not through rho_NN (the implication runs the other way - see the
+    proposition in the Supplement), so the decision rests on this measurement.
+    """
+    def block() -> None:
+        e10 = _read_csv_required(data_dir / "exp10_identifiability_check_results.csv")
+        ok = e10[e10["status"] == "ok"]
+        high = ok[ok["stratum"] == "high"]
+        gain = high.groupby("dataset")["G_auc_oracle"].first().dropna()
+        if gain.empty:
+            mc.logger.warning("high-regime gain: no rows, skipping.")
+            return
+        zero = int((gain <= 0.0).sum())
+        mc.add("numHighRegimeZeroGain", f"{zero}/{len(gain)}",
+               "exp10_identifiability_check_results.csv, datasets in the high rho_NN stratum where the grid optimum gains nothing over alpha=0 (G_auc_oracle <= 0)")
+        mc.add_if_finite("maxHighRegimeOracleGain", float(gain.max()),
+                         "exp10_identifiability_check_results.csv, largest G_auc_oracle over the high rho_NN stratum", sig=2)
+    mc.try_block("no gain in the concentrated regime", block)
+
+
+def _add_grid_extension(mc: MacroCollector, data_dir: Path) -> None:
+    """Where the optimum lands once the alpha grid is extended past its old cap.
+
+    Combines the exp6 grid (0..3) with the exp12 extension (3.25..6) on the
+    datasets exp12 covers, and reports how often the optimum lay beyond the old
+    cap - i.e. how much the "grid optimum" reference understated the attainable
+    gain on those datasets.
+    """
+    def block() -> None:
+        e6 = _read_csv_required(data_dir / "exp6_alpha_curves_results.csv")
+        e12 = _read_csv_required(data_dir / "exp12_alpha_grid_extension_results.csv")
+        e6 = e6[e6["status"] == "ok"]
+        e12 = e12[e12["status"] == "ok"]
+        old_cap = float(e6["alpha"].max())
+        merged = pd.concat([e6[["dataset", "alpha", "auc_rnx"]], e12[["dataset", "alpha", "auc_rnx"]]])
+        med = merged.groupby(["dataset", "alpha"])["auc_rnx"].median().reset_index()
+        covered = set(e12["dataset"].unique())
+        beyond, gains, best_alphas = 0, [], []
+        for dataset_name, grp in med.groupby("dataset"):
+            if dataset_name not in covered:
+                continue
+            best = grp.loc[grp["auc_rnx"].idxmax()]
+            old = grp[grp["alpha"] <= old_cap]
+            best_old = old.loc[old["auc_rnx"].idxmax()]
+            best_alphas.append(float(best["alpha"]))
+            gains.append(float(best["auc_rnx"] - best_old["auc_rnx"]))
+            if float(best["alpha"]) > old_cap:
+                beyond += 1
+        if not best_alphas:
+            mc.logger.warning("grid extension: no overlapping datasets, skipping.")
+            return
+        mc.add("numExpTwelveDatasets", len(best_alphas),
+               "exp12_alpha_grid_extension_results.csv, datasets covered by the grid extension")
+        mc.add("numExpTwelveBeyondOldCap", f"{beyond}/{len(best_alphas)}",
+               f"exp6+exp12 merged, datasets whose argmax median auc_rnx lies above the original cap alpha={old_cap:g}")
+        mc.add_if_finite("maxExpTwelveAlphaStar", max(best_alphas),
+                         "exp6+exp12 merged, largest argmax alpha over the extended grid", sig=2)
+        mc.add_if_finite("maxExpTwelveGain", max(gains),
+                         "exp6+exp12 merged, largest auc_rnx gain of the extended grid over the original one", sig=2)
+        mc.add_if_finite("medExpTwelveGain", float(pd.Series(gains).median()),
+                         "exp6+exp12 merged, median auc_rnx gain of the extended grid over the original one", sig=2)
+        mc.add_if_finite("expTwelveGridMax", float(e12["alpha"].max()),
+                         "exp12_alpha_grid_extension_results.csv, largest alpha searched in the extension", sig=2)
+    mc.try_block("alpha grid extension (exp12)", block)
 
 
 def _add_stats_kendall_cd(mc: MacroCollector, data_dir: Path) -> None:
@@ -949,8 +1120,11 @@ def _add_alpha_pred_rule_coefficients(mc: MacroCollector, data_dir: Path) -> Non
 def _add_regime_map_spearman(mc: MacroCollector, figures_dir: Path) -> None:
     """W5 (05_vysledky.tex, regime_map figure caption): Spearman correlations
     between rho_NN and (a) the t-SNE lead over alpha_auto in AUC_RNX, (b) the
-    best alpha from {0,1,2}; only subset='all' (32 datasets), as cited by the text."""
-    _PANEL_SUFFIX = {"tsne_minus_alpha_auto": "TsneGain", "best_alpha012": "BestAlpha"}
+    best alpha over the article's own full alpha_auto grid
+    (`fig_regime_map._best_alpha_full_grid`, E6); only subset='all', as
+    cited by the text. Panel key 'best_alpha_full_grid' replaced the
+    earlier 'best_alpha012' (reviewer fix 2026-09-18, fig_regime_map.py)."""
+    _PANEL_SUFFIX = {"tsne_minus_alpha_auto": "TsneGain", "best_alpha_full_grid": "BestAlpha"}
 
     def block() -> None:
         df = _read_csv_required(figures_dir / "fig_regime_map_spearman.csv")
@@ -967,6 +1141,141 @@ def _add_regime_map_spearman(mc: MacroCollector, figures_dir: Path) -> None:
                 f"fig_regime_map_spearman.csv, pvalue (subset=all, panel={panel})", sig=2,
             )
     mc.try_block("Spearman regime map (W5, fig_regime_map)", block)
+
+
+def _best_alpha_full_grid_from_exp6(e6: pd.DataFrame) -> pd.Series:
+    """Best alpha per dataset over the article's own alpha_auto search grid,
+    by median-over-seeds auc_rnx - the SAME target as
+    `src.figures.fig_regime_map._best_alpha_full_grid` (kept as a private
+    duplicate here rather than importing across the experiments/figures
+    boundary; any change to the definition must be mirrored in both
+    places, checked by `tests/test_stats.py`)."""
+    e6_ok = e6[e6["status"] == "ok"]
+    med = e6_ok.groupby(["dataset", "alpha"])["auc_rnx"].median()
+    wide = med.unstack("alpha")
+    return wide.idxmax(axis=1)
+
+
+def _add_regime_map_property_spearman(mc: MacroCollector, data_dir: Path, tables_dir: Path) -> None:
+    """Fact-check fix (author, 2026-09-18): 04_experimenty.tex claimed
+    rho_NN (nn_ratio_k1) correlates with the grid-optimum alpha more
+    strongly than every other dataset property. Recomputes the Spearman
+    correlation of EVERY property in `fig_regime_map.property_correlation_columns`
+    (config_experiments.yaml) against the exact same target as the existing
+    `spearmanRegimeMapBestAlphaRho` macro (best alpha per dataset over E6's
+    own alpha_auto grid, by median-over-seeds auc_rnx, dataset_properties.csv
+    kind=='vector', both synthetic and real - subset='all') so the numbers
+    are directly comparable. rho_NN itself is NOT re-exported here (already
+    `spearmanRegimeMapBestAlphaRho`/`...P`, panel=best_alpha_full_grid,
+    subset=all) - only the ambient dimension `d` and the single strongest
+    competing property (by |rho|, excluding nn_ratio_k1) are exported, plus
+    the full per-property table.
+
+    Writes results/tables/[<mode>/]regime_map_property_spearman.csv
+    (columns: property, rho, pvalue, n) - one row per configured property,
+    in config order - the source CSV for every macro this function adds."""
+    from scipy.stats import spearmanr
+
+    def block() -> None:
+        exp_cfg = load_experiments_config()
+        try:
+            columns: list[str] = list(exp_cfg["fig_regime_map"]["property_correlation_columns"])
+        except KeyError as exc:
+            raise KeyError("Missing 'fig_regime_map.property_correlation_columns' in config_experiments.yaml.") from exc
+
+        props = _read_csv_required(data_dir / "dataset_properties.csv")
+        props = props[props["kind"] == "vector"].copy()
+        if props.empty:
+            raise ValueError(f"{data_dir / 'dataset_properties.csv'} contains no row with kind=='vector'.")
+
+        e6 = _read_csv_required(data_dir / "exp6_alpha_curves_results.csv")
+        best_alpha = _best_alpha_full_grid_from_exp6(e6)
+
+        merged = props.set_index("dataset").join(best_alpha.rename("best_alpha_full_grid"), how="inner")
+        if merged.empty:
+            raise ValueError("The dataset intersection between dataset_properties.csv and exp6_alpha_curves_results.csv is empty.")
+
+        missing_cols = [c for c in columns if c not in merged.columns]
+        if missing_cols:
+            raise KeyError(
+                f"dataset_properties.csv is missing columns {missing_cols} listed in "
+                "'fig_regime_map.property_correlation_columns' (config_experiments.yaml)."
+            )
+
+        rows = []
+        for col in columns:
+            valid = merged[col].notna() & merged["best_alpha_full_grid"].notna()
+            n = int(valid.sum())
+            if n < 3:
+                raise ValueError(f"dataset_properties.csv column '{col}' has fewer than 3 valid (non-NaN) rows (n={n}) - cannot compute Spearman rho.")
+            rho, pvalue = spearmanr(merged.loc[valid, col], merged.loc[valid, "best_alpha_full_grid"])
+            rows.append({"property": col, "rho": float(rho), "pvalue": float(pvalue), "n": n})
+        table = pd.DataFrame(rows)
+
+        out_path = tables_dir / "regime_map_property_spearman.csv"
+        tables_dir.mkdir(parents=True, exist_ok=True)
+        table.to_csv(out_path, index=False)
+        csv_name = out_path.name
+
+        def _macro_name(col: str) -> str:
+            # LaTeX \newcommand VALUES may contain underscores (they are
+            # plain text, not a macro name) but raw '_' breaks LaTeX text
+            # mode - escaped here since the property name itself is quoted
+            # verbatim in the macro value.
+            return col.replace("_", r"\_")
+
+        row_d = table[table["property"] == "d"]
+        if row_d.empty:
+            raise ValueError("'d' (ambient dimension) is missing from fig_regime_map.property_correlation_columns.")
+        mc.add_if_finite(
+            "spearmanRegimeMapBestAlphaDimRho", row_d.iloc[0]["rho"],
+            f"{csv_name}, rho (property=d)", sig=3,
+        )
+        mc.add_if_finite(
+            "spearmanRegimeMapBestAlphaDimP", row_d.iloc[0]["pvalue"],
+            f"{csv_name}, pvalue (property=d)", sig=2,
+        )
+
+        competitors = table[table["property"] != "nn_ratio_k1"].copy()
+        if competitors.empty:
+            raise ValueError("No competing property left after excluding nn_ratio_k1 - check 'fig_regime_map.property_correlation_columns'.")
+        top = competitors.loc[competitors["rho"].abs().idxmax()]
+        mc.add("spearmanRegimeMapBestAlphaTopName", _macro_name(str(top["property"])), f"{csv_name}, property with the largest |rho| excluding nn_ratio_k1")
+        mc.add_if_finite(
+            "spearmanRegimeMapBestAlphaTopRho", top["rho"],
+            f"{csv_name}, rho (property={top['property']}, strongest competitor of nn_ratio_k1 by |rho|)", sig=3,
+        )
+        mc.add_if_finite(
+            "spearmanRegimeMapBestAlphaTopP", top["pvalue"],
+            f"{csv_name}, pvalue (property={top['property']}, strongest competitor of nn_ratio_k1 by |rho|)", sig=2,
+        )
+    mc.try_block("Spearman correlations of all dataset properties vs. grid-optimum alpha (fact-check 2026-09-18)", block)
+
+
+def _add_neighborhood_problem_numbers(mc: MacroCollector, figures_dir: Path) -> None:
+    """Flagship intro figure (01_uvod.tex, fig:neighborhood_problem): the
+    "intrusion, not displacement" numbers quoted in the caption, computed by
+    `fig_neighborhood_problem.py` (`_true_neighbor_intrusion_stats`) over
+    ALL n points and their k true original-space neighbors under the MDS
+    (alpha=0) panel - median rank of a true neighbor in the embedding's own
+    order, and its median embedding distance in units of the panel's own
+    local point spacing. NEVER hand-typed in the caption (author reviewer fix
+    2026-09-18)."""
+    def block() -> None:
+        df = _read_csv_required(figures_dir / "fig_neighborhood_problem.csv")
+        row = df[(df["record_type"] == "summary") & (df["panel"] == "mds")]
+        if len(row) != 1:
+            raise ValueError(f"fig_neighborhood_problem.csv: expected exactly 1 summary row for panel='mds', got {len(row)}.")
+        r = row.iloc[0]
+        mc.add(
+            "neighborhoodProblemMdsTrueNeighborMedianRank", int(round(float(r["true_neighbor_median_rank"]))),
+            "fig_neighborhood_problem.csv, panel=mds, true_neighbor_median_rank",
+        )
+        mc.add_if_finite(
+            "neighborhoodProblemMdsTrueNeighborMedianDistanceRatio", r["true_neighbor_median_distance_ratio"],
+            "fig_neighborhood_problem.csv, panel=mds, true_neighbor_median_distance_ratio (multiple of the panel's own local point spacing)", sig=2,
+        )
+    mc.try_block("fig_neighborhood_problem intrusion numbers (01_uvod.tex caption)", block)
 
 
 def _add_regime_stratified(mc: MacroCollector, tables_dir: Path) -> None:
@@ -1389,6 +1698,69 @@ def _add_exp8_prop2_numbers(mc: MacroCollector, data_dir: Path) -> None:
     mc.try_block("exp8 Proposition 2: correlations rho_NN/r_eps^alpha vs. empirical R_near decline (Q1 step 1, item 3)", block_correlations)
 
 
+def _add_exp8_prop2_per_dataset_correlation(mc: MacroCollector, data_dir: Path) -> None:
+    """Review round 2 fix (2026-09-18), point 1: `spearmanPredictedFactorVsDeclineRho`/
+    `...P` in `_add_exp8_prop2_numbers` pool 1885 (dataset,alpha,seed) rows
+    that come from only 32 datasets - the unit of analysis must be the
+    DATASET (project rule "never infer across pooled rows", see
+    exp1_holdout_confirmatory.py), so this group adds the SAME correlation
+    computed WITHIN each dataset (across its own alpha/seed rows), then
+    summarized ACROSS datasets via a median/IQR and a sign test (Wilcoxon
+    signed-rank against zero). The old pooled macros are kept unchanged -
+    the supplement may still cite them - this only ADDS the per-dataset
+    version for the main text.
+
+    A dataset is included only if BOTH `predicted_factor_r_eps_alpha` and
+    `r_near_ratio` take at least 3 distinct values among its p2_holds==True
+    rows - otherwise the within-dataset Spearman correlation is undefined
+    (e.g. two_moons, where r_near_ratio==1.0 on every row: NaN, silently
+    excluded, not fabricated)."""
+    from scipy.stats import spearmanr, wilcoxon
+
+    def block() -> None:
+        df = _read_csv_required(data_dir / "exp8_prop2_check_results.csv")
+        holds = df[(df["status"] == "ok") & (df["p2_holds"] == True)]  # noqa: E712
+        if holds.empty:
+            raise ValueError("exp8_prop2_check_results.csv has no 'ok' row with p2_holds==True for the per-dataset correlations.")
+
+        rhos: dict[str, float] = {}
+        for dataset_name, group in holds.groupby("dataset"):
+            pair = group[["predicted_factor_r_eps_alpha", "r_near_ratio"]].dropna()
+            if pair["predicted_factor_r_eps_alpha"].nunique() < 3 or pair["r_near_ratio"].nunique() < 3:
+                continue
+            rho, _pvalue = spearmanr(pair["predicted_factor_r_eps_alpha"], pair["r_near_ratio"])
+            if np.isfinite(rho):
+                rhos[dataset_name] = float(rho)
+        if len(rhos) < 2:
+            raise ValueError("exp8_prop2_check_results.csv: fewer than 2 datasets have a defined per-dataset Spearman(predicted_factor_r_eps_alpha, r_near_ratio).")
+        rho_series = pd.Series(rhos)
+        n_datasets = int(rho_series.shape[0])
+        n_positive = int((rho_series > 0.0).sum())
+
+        mc.add_if_finite(
+            "medExpEightPerDatasetDeclineRho", rho_series.median(),
+            "exp8_prop2_check_results.csv, Spearman(predicted_factor_r_eps_alpha, r_near_ratio) computed WITHIN each dataset (p2_holds==True, datasets with >=3 distinct values of both variables), median over datasets - unit of analysis = dataset (review round 2, point 1)", sig=3,
+        )
+        mc.add_if_finite(
+            "iqrLowExpEightPerDatasetDeclineRho", rho_series.quantile(0.25),
+            "exp8_prop2_check_results.csv, per-dataset Spearman(predicted_factor_r_eps_alpha, r_near_ratio), first quartile (Q1) over datasets", sig=3,
+        )
+        mc.add_if_finite(
+            "iqrHighExpEightPerDatasetDeclineRho", rho_series.quantile(0.75),
+            "exp8_prop2_check_results.csv, per-dataset Spearman(predicted_factor_r_eps_alpha, r_near_ratio), third quartile (Q3) over datasets", sig=3,
+        )
+        mc.add(
+            "numExpEightPerDatasetPositiveDeclineRho", f"{n_positive}/{n_datasets}",
+            "exp8_prop2_check_results.csv, per-dataset Spearman(predicted_factor_r_eps_alpha, r_near_ratio), count of datasets with rho>0 out of datasets with a defined per-dataset correlation",
+        )
+        stat = wilcoxon(rho_series.to_numpy())
+        mc.add_if_finite(
+            "wilcoxonExpEightPerDatasetDeclineRhoP", float(stat.pvalue),
+            "exp8_prop2_check_results.csv, per-dataset Spearman(predicted_factor_r_eps_alpha, r_near_ratio), two-sided Wilcoxon signed-rank test against zero over datasets (scipy.stats.wilcoxon defaults: zero_method='wilcox', method='auto')", sig=2,
+        )
+    mc.try_block("exp8 Proposition 2: per-dataset Spearman(predicted_factor,decline), unit of analysis = dataset (review round 2, point 1)", block)
+
+
 # alphas for which the correlations rho_NN vs. R_near decline are computed
 # in numbers.tex (matches config_experiments.yaml exp8_prop2_check.summary_alphas
 # - read directly from the config so the number is not duplicated in two places)
@@ -1495,6 +1867,358 @@ def _add_exp9_metric_fidelity_numbers(mc: MacroCollector, data_dir: Path, tables
     mc.try_block("exp9 metric fidelity: pred vs. alpha0 (F_B3, the price of local emphasis in terms of global fidelity)", block_pred_vs_alpha_zero)
 
 
+def _add_exp10_identifiability_numbers(mc: MacroCollector, data_dir: Path, mode: str) -> None:
+    """reserse/2026-09-17_zostreni_propozice2.md, section 9.3 - the macro
+    list is given there EXACTLY under the names 'ExpNine...' (the reserse
+    note calls the experiment 'E9'; it was implemented as
+    src/experiments/exp10_identifiability_check.py /
+    exp10_identifiability_stats.py to avoid a collision with the
+    already-existing exp9_metric_fidelity - the macro NAMES from section 9.3
+    are kept UNCHANGED, only the source CSV file names differ from what the
+    reserse note calls them, see the per-macro `source:` comments below).
+
+    Sources (both mode-specific, results/data/[<mode>/]):
+      exp10_identifiability_check_results.csv - raw per-(dataset,alpha) rows
+        (src/experiments/exp10_identifiability_check.py).
+      exp10_identifiability_stats.csv - regression/H1/H2/H3/quadratic-law
+        (src/experiments/exp10_identifiability_stats.py, long format:
+        columns analysis/label/value/ci_low/ci_high/pvalue/n/note).
+    A missing/incomplete CSV SKIPS this whole macro group (mc.try_block) -
+    exp10 has not necessarily run yet (Q1 extension, 2026-09-17)."""
+
+    def block_raw() -> None:
+        df = _read_csv_required(data_dir / "exp10_identifiability_check_results.csv")
+        ok = df[df["status"] == "ok"]
+        if ok.empty:
+            raise ValueError("exp10_identifiability_check_results.csv has no rows with status 'ok'.")
+
+        a1 = ok[np.isclose(ok["alpha"], 1.0)]
+        if a1.empty:
+            raise ValueError("exp10_identifiability_check_results.csv has no alpha=1.0 rows.")
+        mc.add_if_finite("medExpNineCAlphaOne", a1["c_alpha"].median(), "exp10_identifiability_check_results.csv, c_alpha, median over datasets at alpha=1.0 (c_1, Tvrzeni 3)", sig=3)
+        mc.add_if_finite("iqrExpNineCAlphaOne", a1["c_alpha"].quantile(0.75) - a1["c_alpha"].quantile(0.25), "exp10_identifiability_check_results.csv, c_alpha, interquartile range (Q3-Q1) over datasets at alpha=1.0", sig=3)
+        mc.add_if_finite("medExpNineGammaTildeZero", a1["gamma_tilde_Y0"].median(), "exp10_identifiability_check_results.csv, gamma_tilde_Y0, median over datasets (alpha-independent, read off the alpha=1.0 row - Veta 1 notation gamma~_0)", sig=3)
+        mc.add("numExpNineNontrivialAlphaOne", int(a1["bound_nontrivial"].sum()), "exp10_identifiability_check_results.csv, count of datasets with bound_nontrivial==True (c_1*gamma~_1<1) at alpha=1.0, out of " + str(int(a1.shape[0])))
+
+        nontrivial_pos = ok[(ok["alpha"] > 0.0) & (ok["bound_nontrivial"] == True)]  # noqa: E712
+        # NOTE naming: the reserse note (section 9.3) spells this macro
+        # 'medExpNineTightV1' (V1 = "Veta 1") - LaTeX \newcommand names may
+        # only contain LETTERS (see the module docstring/`_macro_line`,
+        # project rule, same convention as num_to_words for alpha levels
+        # elsewhere in this file), so the digit is spelled out: V1 -> VOne.
+        mc.add_if_finite("medExpNineTightVOne", nontrivial_pos["tight_v1"].median(), "exp10_identifiability_check_results.csv, tight_v1 (Delta_prime/bound_v1), median over (dataset,alpha>0) rows with bound_nontrivial==True (reserse 2026-09-17 section 9.3 spells this macro 'medExpNineTightV1'; V1->VOne, LaTeX macro names are letters-only)", sig=2)
+        mc.add_if_finite("medExpNineTightSandwich", nontrivial_pos["tight_sandwich"].median(), "exp10_identifiability_check_results.csv, tight_sandwich (Delta_prime/bound_sandwich, Lemma 1), median over the SAME rows as medExpNineTightVOne - for comparison", sig=2)
+
+        pos = ok[ok["alpha"] > 0.0]
+        mc.add_if_finite("medExpNineSOne", pos["S1"].median(), "exp10_identifiability_check_results.csv, S1 (E8 slack decomposition, optimization gain vs. PCA init), median over (dataset,alpha>0) rows", sig=2)
+        mc.add_if_finite("medExpNineSTwo", pos["S2"].median(), "exp10_identifiability_check_results.csv, S2 (E8 slack decomposition, budget factor N/|P_near|), median over (dataset,alpha>0) rows", sig=2)
+        mc.add_if_finite("medExpNineSThree", pos["S3"].median(), "exp10_identifiability_check_results.csv, S3 (E8 slack decomposition, within-block weight heterogeneity), median over (dataset,alpha>0) rows", sig=2)
+        mc.add_if_finite("medExpNineSFour", pos["S4"].median(), "exp10_identifiability_check_results.csv, S4 (E8 slack decomposition, bound_b/bound_a), median over (dataset,alpha>0) rows", sig=2)
+        # Total slack of bound (a), i.e. the product S1*S2*S3 = 1/tight_a. Taken
+        # as the median of the per-row product, NOT as the product of the three
+        # medians above (the median is not multiplicative).
+        mc.add_if_finite("medExpNineSlackA", (pos["S1"] * pos["S2"] * pos["S3"]).median(), "exp10_identifiability_check_results.csv, S1*S2*S3 = 1/tight_a (total slack of Proposition 2 bound (a)), median of the per-row product over (dataset,alpha>0) rows", sig=2)
+        mc.add("numExpNineDatasets", int(ok["dataset"].nunique()), "exp10_identifiability_check_results.csv, number of distinct datasets with a successful identifiability check")
+        # The quadratic law (Veta 3) is only testable where the exact Hessian of
+        # the unweighted stress was computed; `fracExpNineQuadraticLawHolds` is a
+        # fraction of THOSE rows, so the text must also report how many there are.
+        tested = pos[~pos["hessian_skipped"].astype(bool)]
+        mc.add("numExpNineHessianDatasets", int(tested["dataset"].nunique()), "exp10_identifiability_check_results.csv, number of datasets with hessian_skipped==False for at least one alpha>0 (the only ones on which the quadratic law is testable)")
+        mc.add("numExpNineHessianRows", int(tested.shape[0]), "exp10_identifiability_check_results.csv, number of (dataset,alpha>0) rows with hessian_skipped==False (denominator of fracExpNineQuadraticLawHolds)")
+
+        exp10_cfg = resolve_experiment_config("exp10_identifiability_check", mode)
+        eta = float(exp10_cfg["eta"])
+        certified = pos[pos["cert_lower"] >= eta].groupby("dataset").size()
+        # Direct certificate: the FIRST inequality of the dual proposition
+        # (sigma_alpha(Y_0)/sigma_alpha(Y~)), i.e. before the block relaxation
+        # that `cert_lower` applies. Reported alongside it because the relaxed
+        # form never fires on real data - see the limitation in the Discussion.
+        direct_pos = pos[pos["cert_lower_direct"] > 0.0]
+        mc.add("numExpNineCertDirectRows", int(direct_pos.shape[0]), "exp10_identifiability_check_results.csv, count of (dataset,alpha>0) rows with cert_lower_direct>0 (direct witness certificate of Delta'_alpha>0)")
+        mc.add("numExpNineCertDirectTotalRows", int(pos.shape[0]), "exp10_identifiability_check_results.csv, total number of (dataset,alpha>0) rows (denominator of numExpNineCertDirectRows)")
+        mc.add("numExpNineCertDirectDatasets", int(direct_pos["dataset"].nunique()), "exp10_identifiability_check_results.csv, number of datasets with cert_lower_direct>0 for at least one alpha>0")
+        mc.add_if_finite("medExpNineCertDirect", direct_pos["cert_lower_direct"].median(), "exp10_identifiability_check_results.csv, cert_lower_direct, median over rows where it is positive (certified lower bound on Delta'_alpha)", sig=2)
+        mc.add_if_finite("maxExpNineIdentityResidual", ok["identity_residual"].abs().max(), "exp10_identifiability_check_results.csv, identity_residual, maximum absolute value over ALL rows (numerical check of the exchange-rate identity, Lemma 2)", sig=2)
+        mc.add("numExpNineCertifiedDatasets", int(certified.shape[0]), f"exp10_identifiability_check_results.csv, count of datasets with cert_lower>=eta (eta={eta:g}, exp10_identifiability_check.eta) for at least one alpha>0 (Veta 2 certificate), out of {int(pos['dataset'].nunique())}")
+    def block_alpha_grid() -> None:
+        # Size of the alpha grid searched by alpha_auto. This is a property of
+        # THIS configuration, not a universal constant - alpha_pred saves the
+        # whole grid search, whatever its size - so the article must never
+        # state the number by hand (it did: "13 behu SMACOF" in 03_metoda.tex).
+        grid = list(resolve_experiment_config("exp6_alpha_curves", mode)["alpha_grid"])
+        mc.add("numAlphaGridPoints", len(grid), "config_experiments.yaml, exp6_alpha_curves.alpha_grid, number of grid points searched by alpha_auto")
+        mc.add_if_finite("alphaGridStep", (grid[1] - grid[0]) if len(grid) > 1 else float("nan"), "config_experiments.yaml, exp6_alpha_curves.alpha_grid, spacing between consecutive grid points", sig=2)
+        mc.add_if_finite("alphaGridMax", max(grid), "config_experiments.yaml, exp6_alpha_curves.alpha_grid, largest alpha searched", sig=2)
+    mc.try_block("alpha grid size (alpha_auto reference strategy)", block_alpha_grid)
+
+    mc.try_block("exp10 identifiability: raw per-row medians/counts (reserse 2026-09-17, section 9.3)", block_raw)
+
+    def block_stats() -> None:
+        stats = _read_csv_required(data_dir / "exp10_identifiability_stats.csv")
+
+        def _row(analysis: str, label: str):
+            r = stats[(stats["analysis"] == analysis) & (stats["label"] == label)]
+            return r.iloc[0] if not r.empty else None
+
+        r = _row("regression_slack_vs_pairs", "slope")
+        if r is not None:
+            mc.add_if_finite("slopeExpNineSlackVsPairs", r["value"], "exp10_identifiability_stats.csv, analysis=regression_slack_vs_pairs/label=slope, OLS slope of log(1/tight_a) ~ log(N_over_n_near) (exp8_prop2_check rows, p2_holds=True)", sig=3)
+            mc.add_if_finite("slopeExpNineSlackVsPairsCiLow", r["ci_low"], "exp10_identifiability_stats.csv, analysis=regression_slack_vs_pairs/label=slope, cluster (dataset) bootstrap CI lower bound", sig=3)
+            mc.add_if_finite("slopeExpNineSlackVsPairsCiHigh", r["ci_high"], "exp10_identifiability_stats.csv, analysis=regression_slack_vs_pairs/label=slope, cluster (dataset) bootstrap CI upper bound", sig=3)
+
+        r = _row("H1_spearman", "cGammaTildeZero_vs_G_auc_oracle")
+        if r is not None:
+            mc.add_if_finite("spearmanExpNineCeilingVsGainRho", r["value"], "exp10_identifiability_stats.csv, analysis=H1_spearman/label=cGammaTildeZero_vs_G_auc_oracle, Spearman(c_1*gamma~_0, G_auc_oracle) over datasets", sig=3)
+            mc.add_if_finite("spearmanExpNineCeilingVsGainP", r["pvalue"], "exp10_identifiability_stats.csv, analysis=H1_spearman/label=cGammaTildeZero_vs_G_auc_oracle, permutation p-value", sig=2)
+
+        r = _row("H1_spearman", "I0exact_vs_G_auc_oracle")
+        if r is not None:
+            mc.add_if_finite("spearmanExpNineIZeroVsGainRho", r["value"], "exp10_identifiability_stats.csv, analysis=H1_spearman/label=I0exact_vs_G_auc_oracle, Spearman(I0_exact, G_auc_oracle) over datasets", sig=3)
+            mc.add_if_finite("spearmanExpNineIZeroVsGainP", r["pvalue"], "exp10_identifiability_stats.csv, analysis=H1_spearman/label=I0exact_vs_G_auc_oracle, permutation p-value", sig=2)
+
+        r = _row("H2_phi_low", "phi")
+        if r is not None:
+            mc.add_if_finite("medExpNinePhiLow", r["value"], "exp10_identifiability_stats.csv, analysis=H2_phi_low/label=phi, median(G_pred/G_auc_oracle) over 'low'-stratum datasets", sig=3)
+            mc.add_if_finite("medExpNinePhiLowCiLow", r["ci_low"], "exp10_identifiability_stats.csv, analysis=H2_phi_low/label=phi, percentile bootstrap CI lower bound", sig=3)
+            mc.add_if_finite("medExpNinePhiLowCiHigh", r["ci_high"], "exp10_identifiability_stats.csv, analysis=H2_phi_low/label=phi, percentile bootstrap CI upper bound", sig=3)
+
+        r = _row("H3_tost_high", "G_pred")
+        if r is not None:
+            mc.add_if_finite("tostExpNineHighP", r["pvalue"], "exp10_identifiability_stats.csv, analysis=H3_tost_high/label=G_pred, TOST p-value (equivalence of G_pred to 0 within +-delta_eq in the 'high' stratum)", sig=2)
+
+        r = _row("quadratic_law_fraction", "pooled")
+        if r is not None:
+            mc.add_if_finite("fracExpNineQuadraticLawHolds", r["value"], "exp10_identifiability_stats.csv, analysis=quadratic_law_fraction/label=pooled, fraction of (dataset,alpha>0) rows with quadratic_law_holds==True", sig=2)
+    mc.try_block("exp10 identifiability: regression/H1/H2/H3/quadratic-law (reserse 2026-09-17, section 9.3)", block_stats)
+
+
+def _add_exp10_negative_delta_survival(mc: MacroCollector, data_dir: Path) -> None:
+    """Review round 2 fix (2026-09-18), point 3: 06_diskuse.tex claims that
+    filtering `exp10_identifiability_check_results.csv` to the
+    convergence-driven threshold tau measured by
+    `exp14_convergence_robustness.py` (`tau_source=='measured_from_exp11'`)
+    reverses no claim. That is true for `Delta_prime` but NOT for `Delta`:
+    of the (dataset,alpha>0) rows with a NEGATIVE `Delta`, some survive the
+    same |Delta|>=tau AND |Delta_prime|>=tau filter that
+    `exp14_convergence_robustness.py::_kept_rows` applies. tau is read from
+    `exp14_convergence_robustness_results.csv` (measured row), NEVER
+    hardcoded (project rule - no magic numbers)."""
+
+    def block() -> None:
+        e10 = _read_csv_required(data_dir / "exp10_identifiability_check_results.csv")
+        pos = e10[(e10["status"] == "ok") & (e10["alpha"] > 0.0)]
+        if pos.empty:
+            raise ValueError("exp10_identifiability_check_results.csv has no status=='ok' & alpha>0 rows.")
+
+        e14 = _read_csv_required(data_dir / "exp14_convergence_robustness_results.csv")
+        measured = e14[e14["tau_source"] == "measured_from_exp11"]
+        if measured.empty:
+            raise ValueError("exp14_convergence_robustness_results.csv has no tau_source=='measured_from_exp11' row.")
+        tau = float(measured.iloc[0]["tau"])
+
+        def _report(column: str, macro_stub: str) -> None:
+            neg = pos[pos[column] < 0.0]
+            survives = (neg["Delta"].abs() >= tau) & (neg["Delta_prime"].abs() >= tau)
+            kept = neg[survives]
+            mc.add(
+                f"numExpNineNegative{macro_stub}RowsTotal", int(neg.shape[0]),
+                f"exp10_identifiability_check_results.csv, count of (dataset,alpha>0) rows with {column}<0",
+            )
+            mc.add(
+                f"numExpNineNegative{macro_stub}RowsSurviving", int(kept.shape[0]),
+                f"exp10_identifiability_check_results.csv rows with {column}<0, count surviving the exp14-measured filter (exp14_convergence_robustness_results.csv, tau_source=measured_from_exp11, tau={tau:.6g}): |Delta|>=tau AND |Delta_prime|>=tau, same rule as exp14_convergence_robustness.py::_kept_rows",
+            )
+            dataset_list = sorted(kept["dataset"].unique())
+            escaped = ", ".join(str(d).replace("_", "\\_") for d in dataset_list)
+            mc.add(
+                f"negative{macro_stub}SurvivingDatasetsList", escaped,
+                f"exp10_identifiability_check_results.csv, datasets with a {column}<0 row surviving the exp14-measured tau filter (LaTeX-escaped list, empty string if none survive)",
+            )
+
+        _report("Delta", "Delta")
+        _report("Delta_prime", "DeltaPrime")
+
+    mc.try_block("exp10 identifiability: negative Delta/Delta_prime rows surviving the exp14-measured convergence filter (review round 2, point 3)", block)
+
+
+def _add_exp13_neighbor_survival_numbers(mc: MacroCollector, tables_dir: Path) -> None:
+    """documentation/2026-09-17_zadani_exp13_preziti_sousedu.md - the
+    plain-language "how many neighbors survive" table
+    (results/tables/[<mode>/]exp13_neighbor_survival.csv, written by
+    `src/experiments/exp13_neighbor_survival.py::_write_survival_table`):
+    median neighbors kept (out of k) for the alpha=0/alpha=1/alpha_best
+    policies in each of the two regime panels, plus the k used - the numbers
+    behind the article's plain-language framing of the alpha-vs-metric-cost
+    trade-off."""
+    from src.experiments.exp13_neighbor_survival import (
+        PANEL_LOW_RATIO,
+        PANEL_REST,
+        POLICY_LABEL_BEST,
+        POLICY_LABEL_PRED,
+        policy_label,
+    )
+
+    def block() -> None:
+        df = _read_csv_required(tables_dir / "exp13_neighbor_survival.csv")
+
+        def _row(panel: str, policy: str):
+            r = df[(df["panel"] == panel) & (df["policy"] == policy)]
+            return r.iloc[0] if not r.empty else None
+
+        k_values = df["k"].dropna().unique()
+        if len(k_values) != 1:
+            raise ValueError(f"exp13_neighbor_survival.csv is expected to use a single k, got {sorted(k_values)}.")
+        mc.add("numNeighborSurvivalK", int(k_values[0]), "exp13_neighbor_survival.csv, k (exp13_neighbor_survival.k_values[0])")
+
+        panels = {"LowRatio": PANEL_LOW_RATIO, "RestRatio": PANEL_REST}
+        policies = {"AlphaZero": policy_label(0.0), "AlphaOne": policy_label(1.0), "AlphaPred": POLICY_LABEL_PRED, "AlphaBest": POLICY_LABEL_BEST}
+        for panel_word, panel in panels.items():
+            for policy_word, policy in policies.items():
+                r = _row(panel, policy)
+                if r is None:
+                    continue
+                mc.add_if_finite(
+                    f"medNeighborSurvivalKept{policy_word}{panel_word}", r["neighbors_kept"],
+                    f"exp13_neighbor_survival.csv, neighbors_kept, panel={panel}, policy={policy}, median over datasets", sig=3,
+                )
+                mc.add(f"numNeighborSurvivalDatasets{policy_word}{panel_word}", int(r["n_datasets"]), f"exp13_neighbor_survival.csv, n_datasets, panel={panel}, policy={policy}")
+
+    mc.try_block("exp13 neighbor survival: median neighbors kept by alpha policy and regime panel", block)
+
+
+def _add_exp14_convergence_robustness_numbers(mc: MacroCollector, data_dir: Path) -> None:
+    """documentation/2026-09-17_zadani_exp14_robustnost_konvergence.md - the
+    row measured from exp11_convergence_check_results.csv
+    (`tau_source=='measured_from_exp11'` in
+    results/data/[<mode>/]exp14_convergence_robustness_results.csv), i.e. the
+    answer to "do the exp10 claims survive filtering out rows below the
+    convergence residual". Macro names use a 'robust' prefix and are
+    DELIBERATELY DIFFERENT from the original 'ExpNine...' macros of
+    `_add_exp10_identifiability_numbers` (those are never overwritten - see
+    the E14 task description)."""
+
+    def block() -> None:
+        df = _read_csv_required(data_dir / "exp14_convergence_robustness_results.csv")
+        measured = df[df["tau_source"] == "measured_from_exp11"]
+        if measured.empty:
+            raise ValueError("exp14_convergence_robustness_results.csv has no tau_source=='measured_from_exp11' row.")
+        r = measured.iloc[0]
+
+        mc.add_if_finite("robustTauMeasured", r["tau"], "exp14_convergence_robustness_results.csv, tau_source=measured_from_exp11, threshold measured from exp11_convergence_check_results.csv (median over datasets of the max relative stress decline baseline->tight)", sig=2)
+        if float(r["n_rows_total"]) > 0:
+            mc.add_if_finite("robustFracRowsKept", float(r["n_rows_kept"]) / float(r["n_rows_total"]), "exp14_convergence_robustness_results.csv, tau_source=measured_from_exp11, n_rows_kept/n_rows_total (fraction of exp10 alpha>0 rows surviving the measured threshold)", sig=2)
+        mc.add("robustNumDatasetsKept", int(r["n_datasets_kept"]), "exp14_convergence_robustness_results.csv, tau_source=measured_from_exp11, n_datasets_kept")
+        mc.add_if_finite("robustMedTightVOne", r["med_tight_v1"], "exp14_convergence_robustness_results.csv, tau_source=measured_from_exp11, med_tight_v1 (compare to medExpNineTightVOne at tau=0)", sig=2)
+        mc.add("robustNumNontrivialAlphaOne", int(r["n_nontrivial_alpha_one"]), "exp14_convergence_robustness_results.csv, tau_source=measured_from_exp11, n_nontrivial_alpha_one (compare to numExpNineNontrivialAlphaOne at tau=0)")
+        mc.add_if_finite("robustSpearmanCeilingVsGainRho", r["spearman_ceiling_vs_gain_rho"], "exp14_convergence_robustness_results.csv, tau_source=measured_from_exp11, spearman_ceiling_vs_gain_rho (compare to spearmanExpNineCeilingVsGainRho at tau=0)", sig=3)
+        mc.add_if_finite("robustSpearmanCeilingVsGainP", r["spearman_ceiling_vs_gain_p"], "exp14_convergence_robustness_results.csv, tau_source=measured_from_exp11, spearman_ceiling_vs_gain_p (exp14's OWN permutation seed, not comparable bit-for-bit to spearmanExpNineCeilingVsGainP)", sig=2)
+
+    mc.try_block("exp14 convergence robustness: numbers at the exp11-measured threshold", block)
+
+
+def _add_exp15_discovery_task_numbers(mc: MacroCollector, data_dir: Path, tables_dir: Path) -> None:
+    """E15 downstream discovery task (author request 2026-09-18, motivated
+    by a DAMI editor objection that no task in the manuscript shows a
+    better map leading to a better FINDING). Dataset inclusion/exclusion
+    counts come from results/data/[<mode>/]exp15_discovery_task_results.csv
+    ('note' column; reasons defined in src/sammon/discovery_task.py::NOTE_*),
+    per-method n_correct/error_rate from
+    results/tables/[<mode>/]exp15_discovery_task_summary.csv, and the
+    Holm-adjusted McNemar comparisons of exp15_discovery_task_stats.
+    reference_method vs every other report.main_methods baseline from
+    results/tables/[<mode>/]exp15_discovery_task_pairwise.csv
+    (src/experiments/exp15_discovery_task_stats.py). Method list comes from
+    report.main_methods (config), never hardcoded.
+
+    Honesty check (author 2026-09-18, after two 'overclaiming' referee
+    catches): errRateExpFifteen* for the stress family macros stays at
+    32-38%, never near zero, and the pairwise family macros show alpha_pred
+    is statistically indistinguishable from the OTHER stress-family
+    variants (sammon_alpha0_smacof/_smacof/_auto/2) - only the
+    stress-vs-neighbor-family comparisons (t-SNE/UMAP/PaCMAP/TriMap/PHATE)
+    reach significance. The win belongs to the stress family, not to the
+    alpha_pred rule specifically."""
+    from src.sammon.discovery_task import (
+        DISCOVERY_QUESTIONS,
+        NOTE_EXCESSIVE_CLASSES,
+        NOTE_INSUFFICIENT_CLASSES,
+        QUESTION_MOST_DISPERSED,
+        QUESTION_NEAREST_PAIR,
+    )
+
+    question_word = {QUESTION_NEAREST_PAIR: "NearestPair", QUESTION_MOST_DISPERSED: "MostDispersed"}
+    exp_cfg = load_experiments_config()
+    main_methods: list[str] = exp_cfg["report"]["main_methods"]
+    reference_method = exp_cfg["exp15_discovery_task_stats"]["reference_method"]
+
+    def block_counts() -> None:
+        df = _read_csv_required(data_dir / "exp15_discovery_task_results.csv")
+        notes = df.groupby("dataset")["note"].first()
+        mc.add("numExpFifteenDatasetsTotal", int(notes.shape[0]), "exp15_discovery_task_results.csv, number of distinct dataset values")
+        mc.add("numExpFifteenDatasetsIncluded", int(notes.isna().sum()), "exp15_discovery_task_results.csv, datasets with note is empty (both questions defined)")
+        mc.add("numExpFifteenDatasetsExcluded", int(notes.notna().sum()), "exp15_discovery_task_results.csv, datasets with a non-empty note")
+        mc.add(
+            "numExpFifteenDatasetsExcludedInsufficientClasses", int((notes == NOTE_INSUFFICIENT_CLASSES).sum()),
+            f"exp15_discovery_task_results.csv, note=='{NOTE_INSUFFICIENT_CLASSES}' (src/sammon/discovery_task.py::NOTE_INSUFFICIENT_CLASSES)",
+        )
+        mc.add(
+            "numExpFifteenDatasetsExcludedExcessiveClasses", int((notes == NOTE_EXCESSIVE_CLASSES).sum()),
+            f"exp15_discovery_task_results.csv, note=='{NOTE_EXCESSIVE_CLASSES}' (src/sammon/discovery_task.py::NOTE_EXCESSIVE_CLASSES)",
+        )
+
+    mc.try_block("exp15 discovery task: dataset inclusion/exclusion counts", block_counts)
+
+    def block_summary() -> None:
+        summary = _read_csv_required(tables_dir / "exp15_discovery_task_summary.csv")
+        for question in DISCOVERY_QUESTIONS:
+            qword = question_word[question]
+            for method in main_methods:
+                row = summary[(summary["question"] == question) & (summary["method"] == method)]
+                if row.empty:
+                    continue
+                r = row.iloc[0]
+                suffix = _suffix(method)
+                n_correct = int(round(float(r["n_datasets"]) * (1.0 - float(r["error_rate"]))))
+                mc.add(
+                    f"numExpFifteenCorrect{suffix}{qword}", n_correct,
+                    f"exp15_discovery_task_summary.csv, question={question}, method={method}, round(n_datasets*(1-error_rate))",
+                )
+                mc.add_if_finite(
+                    f"errRateExpFifteen{suffix}{qword}", r["error_rate"],
+                    f"exp15_discovery_task_summary.csv, question={question}, method={method}, error_rate", sig=2,
+                )
+
+    mc.try_block("exp15 discovery task: per-method n_correct/error_rate (report.main_methods)", block_summary)
+
+    def block_pairwise() -> None:
+        pairwise = _read_csv_required(tables_dir / "exp15_discovery_task_pairwise.csv")
+        ref_suffix = _suffix(reference_method)
+        for question in DISCOVERY_QUESTIONS:
+            qword = question_word[question]
+            fam = pairwise[pairwise["question"] == question]
+            if fam.empty:
+                continue
+            mc.add(
+                f"numExpFifteenBaselinesTotal{qword}", int(len(fam)),
+                f"exp15_discovery_task_pairwise.csv, question={question}, number of baseline rows (method_a=={reference_method} vs every other report.main_methods method)",
+            )
+            mc.add(
+                f"numExpFifteenSignificantMcnemarHolm{qword}", int(fam["reject_mcnemar_holm"].fillna(False).sum()),
+                f"exp15_discovery_task_pairwise.csv, question={question}, count of reject_mcnemar_holm==True (alpha=exp15_discovery_task_stats.alpha)",
+            )
+            for baseline_key, baseline_method in (("TsneAuto", "tsne_auto"), ("UmapAuto", "umap_auto")):
+                row = fam[fam["method_b"] == baseline_method]
+                if row.empty:
+                    continue
+                r = row.iloc[0]
+                mc.add_if_finite(
+                    f"pExpFifteenMcnemarHolm{ref_suffix}Vs{baseline_key}{qword}", r["p_mcnemar_holm"],
+                    f"exp15_discovery_task_pairwise.csv, question={question}, method_a={reference_method}, method_b={baseline_method}, p_mcnemar_holm", sig=2,
+                )
+
+    mc.try_block("exp15 discovery task: Holm-adjusted McNemar p-values (alpha_pred vs t-SNE/UMAP) and significant-baseline counts", block_pairwise)
+
+
 def build_numbers_tex(mode: str = "full") -> tuple[str, int]:
     """Builds the content of numbers.tex for a given mode. Returns (text, number_of_generated_macros)."""
     logger = get_logger(MODULE_NAME, mode=mode)
@@ -1511,6 +2235,11 @@ def build_numbers_tex(mode: str = "full") -> tuple[str, int]:
         lambda: _add_counts(mc, data_dir),
         lambda: _add_medians(mc, data_dir),
         lambda: _add_win_counts(mc, data_dir, neighbor_methods),
+        lambda: _add_alpha_zero_vs_one(mc, data_dir),
+        lambda: _add_alpha_pred_distribution(mc, data_dir, mode),
+        lambda: _add_alpha_pred_on_graphs(mc, data_dir),
+        lambda: _add_high_regime_no_gain(mc, data_dir),
+        lambda: _add_grid_extension(mc, data_dir),
         lambda: _add_stats_kendall_cd(mc, data_dir),
         lambda: _add_exp3_group_numbers(mc, data_dir, tables_dir),
         lambda: _add_pareto_numbers(mc, tables_dir, data_dir),
@@ -1524,6 +2253,8 @@ def build_numbers_tex(mode: str = "full") -> tuple[str, int]:
         lambda: _add_alpha_pred_rule_coefficients(mc, data_dir),
         lambda: _add_exp7_numbers(mc, tables_dir, data_dir),
         lambda: _add_regime_map_spearman(mc, figures_dir),
+        lambda: _add_regime_map_property_spearman(mc, data_dir, tables_dir),
+        lambda: _add_neighborhood_problem_numbers(mc, figures_dir),
         lambda: _add_regime_stratified(mc, tables_dir),
         lambda: _add_graph_nn_ratio_range(mc, data_dir),
         lambda: _add_umap_grid_edge(mc, data_dir),
@@ -1532,7 +2263,13 @@ def build_numbers_tex(mode: str = "full") -> tuple[str, int]:
         lambda: _add_exp2_solver_scaling_config_numbers(mc),
         lambda: _add_q1_holdout_numbers(mc, data_dir, tables_dir),
         lambda: _add_exp8_prop2_numbers(mc, data_dir),
+        lambda: _add_exp8_prop2_per_dataset_correlation(mc, data_dir),
         lambda: _add_exp9_metric_fidelity_numbers(mc, data_dir, tables_dir),
+        lambda: _add_exp10_identifiability_numbers(mc, data_dir, mode),
+        lambda: _add_exp10_negative_delta_survival(mc, data_dir),
+        lambda: _add_exp13_neighbor_survival_numbers(mc, tables_dir),
+        lambda: _add_exp14_convergence_robustness_numbers(mc, data_dir),
+        lambda: _add_exp15_discovery_task_numbers(mc, data_dir, tables_dir),
     ]
     for fn in groups:
         fn()

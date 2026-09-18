@@ -181,10 +181,10 @@ def main() -> None:
         ax.axvline(alpha_by_regime[regime], color=color, linewidth=1.0, linestyle="--", zorder=1)
 
     ax.axhline(1.0, color="grey", linewidth=0.6, linestyle=":", zorder=1)
-    ax.set_xlabel("alpha")
+    ax.set_xlabel(r"$\alpha$")
     ax.set_ylabel("AUC$_{RNX}(\\alpha)$ / AUC$_{RNX}(0)$ (median, IQR band)")
     ax.set_title(
-        "Alpha gain over MDS by nearest-neighbor\ndistance ratio $\\rho_{NN}$ (high $\\rho_{NN}$ = concentrated distances)",
+        r"$\alpha$ gain over MDS by nearest-neighbor" + "\n" + r"distance ratio $\rho_{NN}$ (high $\rho_{NN}$ = concentrated distances)",
         fontsize=7,
     )
     ax.legend(fontsize=6, loc="best")

@@ -33,6 +33,7 @@ from src.figures.fig_common import (
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
+    display_label,
     parse_fig_mode,
     require_experiment_csv,
     save_csv_alongside,
@@ -125,9 +126,9 @@ def main() -> None:
             for spine in ax.spines.values():
                 spine.set_linewidth(0.4)
             if i == 0:
-                ax.set_title(method_name, fontsize=7)
+                ax.set_title(display_label(method_name, "method"), fontsize=7)
             if j == 0:
-                ax.set_ylabel(dataset_name, fontsize=7)
+                ax.set_ylabel(display_label(dataset_name, "dataset"), fontsize=7)
 
             # the accompanying CSV is only for documentation/reproducibility
             # of the underlying points - with 32 datasets x 16 methods x up

@@ -296,6 +296,34 @@ def knn_jaccard(order_orig: np.ndarray, order_emb: np.ndarray, k: int) -> float:
     return float(jac.mean())
 
 
+def knn_overlap_count(order_orig: np.ndarray, order_emb: np.ndarray, k: int) -> float:
+    """Mean COUNT (not fraction) of shared K nearest neighbors between the
+    original and projected space: mean_i |N_K^D(i) n N_K^Y(i)|, a value in
+    [0, k] - "how many of the k nearest neighbors survive the projection",
+    the plain-language companion to `knn_jaccard` (documentation/
+    2026-09-17_zadani_exp13_preziti_sousedu.md).
+
+    IMPORTANT: this is NOT recoverable from the mean Jaccard `knn_jaccard`
+    via the single-point identity m = 2*k*J/(1+J) - that identity holds
+    POINTWISE (for one point's own J(i) and m(i)=|N_K^D(i) n N_K^Y(i)|), but
+    m = 2*k*J/(1+J) is a CONCAVE function of J, so by Jensen's inequality
+    applying it to the MEAN Jaccard over-estimates the true mean count
+    whenever the per-point Jaccard values differ across points. The mean
+    count must therefore always be computed directly from the neighbor
+    orders, never derived from an already-averaged Jaccard value."""
+    n = order_orig.shape[0]
+    if k < 1 or k > n - 1:
+        raise ValueError(f"k={k} must be in range [1, {n - 1}].")
+    knn_orig = order_orig[:, :k]
+    knn_emb = order_emb[:, :k]
+    counts = np.empty(n, dtype=np.float64)
+    for i in range(n):
+        so = set(knn_orig[i].tolist())
+        se = set(knn_emb[i].tolist())
+        counts[i] = len(so & se)
+    return float(counts.mean())
+
+
 def distance_consistency(Y: np.ndarray, y: np.ndarray) -> float:
     """Distance consistency DSC (Sips, Neubert, Lewis, Hanrahan 2009, DOI
     10.1111/j.1467-8659.2009.01467.x): fraction of points whose nearest

@@ -59,6 +59,14 @@ run_step "fig_temporal_trajectories" "$PYTHON" -m src.figures.fig_temporal_traje
 run_step "fig_rnx_curves" "$PYTHON" -m src.figures.fig_rnx_curves --"$MODE"
 run_step "fig_cd_diagram" "$PYTHON" -m src.figures.fig_cd_diagram --"$MODE"
 
+# The main-text CD diagram is the one over `report.main_methods` for
+# scale-invariant stress; the default call above only produces the auc_rnx
+# variant, so the remaining variants used by the paper and the supplement
+# are generated explicitly (everything regenerable in one command).
+for METRIC in stress_scale_invariant trustworthiness_k7 auc_rnx; do
+    run_step "fig_cd_diagram exp1_dr_benchmark_main/$METRIC" "$PYTHON" -m src.figures.fig_cd_diagram --"$MODE" --experiment exp1_dr_benchmark_main --metric "$METRIC"
+done
+
 # K11 (documentation/2026-09-12_plan_smeru_clanku.md): focused figure of
 # graph layouts for the main text (polbooks/football/cora x 2 distances
 # x 5 methods) - requires src/run_exp3_graph_layout.sh (E3).
@@ -118,5 +126,28 @@ echo "=== fig_metric_fidelity_gallery ==="
 # exp1_cluster_geometry.
 echo "=== fig_metric_correlations ==="
 "$PYTHON" -m src.figures.fig_metric_correlations --"$MODE"
+
+# Veta 3 local quadratic law (identifiability, reserse
+# 2026-09-17_zostreni_propozice2.md section 10) - requires
+# run_exp10_identifiability_check.sh.
+run_step "fig_identifiability_law" "$PYTHON" -m src.figures.fig_identifiability_law --"$MODE"
+
+# Replaces the exp13_neighbor_survival main-text table (2026-09-17
+# article-shortening task) - requires run_exp13_neighbor_survival.sh.
+run_step "fig_neighbor_survival" "$PYTHON" -m src.figures.fig_neighbor_survival --"$MODE"
+
+# Flagship figure (2026-09-17): MDS vs. tuned alpha-Sammon vs. t-SNE with
+# original-space k-NN edges on the helix dataset - requires
+# run_exp6_alpha_curves.sh/run_exp12_alpha_grid_extension.sh/
+# run_exp1_dr_benchmark.sh to have already completed in the same mode.
+# NOTE: --quick has no 'helix' data in exp1_dr_benchmark.quick/
+# exp6_alpha_curves.quick - only --smoke/--full are usable (see
+# fig_neighborhood_problem.py's module docstring).
+run_step "fig_neighborhood_problem" "$PYTHON" -m src.figures.fig_neighborhood_problem --"$MODE"
+
+# E15 downstream discovery task (2026-09-18, DAMI editor objection about a
+# missing "better map -> better finding" task) - requires
+# run_exp15_discovery_task_stats.sh (which itself requires exp15_discovery_task).
+run_step "fig_discovery_task" "$PYTHON" -m src.figures.fig_discovery_task --"$MODE"
 
 echo "=== done: results/figures/ and clanek/img/ ==="

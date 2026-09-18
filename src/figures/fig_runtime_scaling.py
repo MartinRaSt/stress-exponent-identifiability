@@ -25,10 +25,20 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.experiments.exp_common import resolve_experiment_name
-from src.figures.fig_common import OKABE_ITO, WIDTH_SINGLE_COL_IN, add_quick_arg, parse_fig_mode, require_experiment_csv, save_csv_alongside, save_figure
+from src.figures.fig_common import OKABE_ITO, WIDTH_SINGLE_COL_IN, add_quick_arg, display_label, parse_fig_mode, require_experiment_csv, save_csv_alongside, save_figure
 
 FIG_NAME = "fig_runtime_scaling"
 BASE_EXPERIMENT_NAME = "exp2_scaling"
+
+
+def _solver_device_label(method_name: str) -> str:
+    """'smacof__cuda' -> 'SMACOF (GPU (CUDA))' (see exp2_solver_scaling.py:
+    method_label = f'{solver}__{device}') - falls back to the generic
+    display_label('method') for a method_name without the '__device' suffix."""
+    if "__" in method_name:
+        solver, device = method_name.split("__", 1)
+        return f"{display_label(solver, 'solver')} ({display_label(device, 'device')})"
+    return display_label(method_name, "solver")
 
 
 def main() -> None:
@@ -51,13 +61,13 @@ def main() -> None:
     fig, ax = plt.subplots(figsize=(WIDTH_SINGLE_COL_IN, WIDTH_SINGLE_COL_IN * 0.85))
     for i, method_name in enumerate(sorted(med["method"].unique())):
         s = med[med["method"] == method_name].sort_values("n")
-        ax.plot(s["n"], s["wall_time_sec"], marker="o", markersize=3, linewidth=1.0, label=method_name, color=OKABE_ITO[i % len(OKABE_ITO)])
+        ax.plot(s["n"], s["wall_time_sec"], marker="o", markersize=3, linewidth=1.0, label=_solver_device_label(method_name), color=OKABE_ITO[i % len(OKABE_ITO)])
 
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("n")
     ax.set_ylabel("wall-clock time [s] (median)")
     ax.legend(fontsize=5.5, ncol=1)
-    ax.set_title("Runtime scaling (E2b, gaussian_clusters)", fontsize=8)
+    ax.set_title(f"Runtime scaling (E2b, {display_label('gaussian_clusters', 'dataset')})", fontsize=8)
 
     fig.tight_layout()
     save_figure(fig, FIG_NAME)

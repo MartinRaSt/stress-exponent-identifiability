@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import matplotlib.pyplot as plt
 
-from src.figures.fig_common import OKABE_ITO, WIDTH_SINGLE_COL_IN, add_quick_arg, mode_data_dir, parse_fig_mode, require_csv, save_csv_alongside, save_figure
+from src.figures.fig_common import OKABE_ITO, WIDTH_SINGLE_COL_IN, add_quick_arg, display_label, mode_data_dir, parse_fig_mode, require_csv, save_csv_alongside, save_figure
 
 FIG_NAME = "fig_sgd_convergence"
 
@@ -52,12 +52,12 @@ def main() -> None:
             s = sub[(sub["solver"] == solver) & (sub["seed"] == seed0)].sort_values("epoch")
             if s.empty:
                 continue
-            ax.plot(s["epoch"], s["stress_scale_invariant"], label=solver, color=solver_colors.get(solver, OKABE_ITO[0]), linewidth=1.2)
+            ax.plot(s["epoch"], s["stress_scale_invariant"], label=display_label(solver, "solver"), color=solver_colors.get(solver, OKABE_ITO[0]), linewidth=1.2)
         ax.set_yscale("log")
         ax.set_xlabel("epoch")
         if ax_idx == 0:
             ax.set_ylabel("scale-invariant stress (log)")
-        ax.set_title(f"{dataset_name} (seed={seed0})", fontsize=8)
+        ax.set_title(f"{display_label(dataset_name, 'dataset')} (seed={seed0})", fontsize=8)
         ax.legend(fontsize=6)
 
     fig.suptitle("SGD convergence: naive vs. stabilized", fontsize=9)

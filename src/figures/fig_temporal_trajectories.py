@@ -33,6 +33,7 @@ from src.figures.fig_common import (
     WIDTH_FULL_WIDTH_IN,
     WIDTH_SINGLE_COL_IN,
     add_quick_arg,
+    display_label,
     mode_data_dir,
     parse_fig_mode,
     require_csv,
@@ -63,7 +64,7 @@ def _make_space_time_and_small_multiples(traj: pd.DataFrame, dataset: str, lam: 
         color = cmap(t / max(ts))
         ax1.scatter(st["x"], st["y"], st["t"], s=4, color=color, rasterized=True, linewidths=0)
     ax1.set_xlabel("x"); ax1.set_ylabel("y"); ax1.set_zlabel("t (snapshot)")
-    ax1.set_title(f"Space-time cube: {dataset} (lambda={lam}, alpha={alpha}, {solver})", fontsize=8)
+    ax1.set_title(f"Space-time cube: {display_label(dataset, 'dataset')} (lambda={lam}, alpha={alpha}, {display_label(solver, 'solver')})", fontsize=8)
     fig1.tight_layout()
     save_figure(fig1, f"fig_temporal_trajectories_h1_{dataset}_lam{lam}_{solver}")
 
@@ -88,7 +89,7 @@ def _make_space_time_and_small_multiples(traj: pd.DataFrame, dataset: str, lam: 
         ax.set_title(f"t={t}", fontsize=6)
     for idx in range(len(ts), n_rows * n_cols):
         axes[idx // n_cols][idx % n_cols].axis("off")
-    fig2.suptitle(f"Temporal small multiples with trailing alpha-blend: {dataset} (lambda={lam}, alpha={alpha}, {solver})", fontsize=9)
+    fig2.suptitle(f"Temporal small multiples with trailing alpha-blend: {display_label(dataset, 'dataset')} (lambda={lam}, alpha={alpha}, {display_label(solver, 'solver')})", fontsize=9)
     fig2.tight_layout(rect=(0, 0, 1, 0.95))
     save_figure(fig2, f"fig_temporal_trajectories_h2_{dataset}_lam{lam}_{solver}")
 
@@ -108,7 +109,7 @@ def _make_tradeoff(results: pd.DataFrame, dataset: str) -> None:
 
     fig, ax = plt.subplots(figsize=(WIDTH_SINGLE_COL_IN, WIDTH_SINGLE_COL_IN * 0.9))
     for i, ((alpha_val, solver_val), grp) in enumerate(agg.groupby(["alpha", "solver"])):
-        ax.plot(grp["stab"], grp["qual"], marker="o", markersize=3, linewidth=1.0, color=OKABE_ITO[(1 + i) % len(OKABE_ITO)], label=f"alpha={alpha_val:g}, {solver_val}")
+        ax.plot(grp["stab"], grp["qual"], marker="o", markersize=3, linewidth=1.0, color=OKABE_ITO[(1 + i) % len(OKABE_ITO)], label=f"alpha={alpha_val:g}, {display_label(solver_val, 'solver')}")
         for _, r in grp.iterrows():
             ax.annotate(f"{r['lam']:g}", (r["stab"], r["qual"]), fontsize=5, xytext=(2, 2), textcoords="offset points")
     baseline = agg[agg["lam"] == 0.0]
@@ -116,7 +117,7 @@ def _make_tradeoff(results: pd.DataFrame, dataset: str) -> None:
         ax.scatter(baseline["stab"], baseline["qual"], color=OKABE_ITO[6], marker="*", s=40, zorder=5, label="baseline (lambda=0)")
     ax.set_xlabel("stability (lower = more stable)")
     ax.set_ylabel("quality: median E_alpha^scale-inv")
-    ax.set_title(f"Stability-quality trade-off across lambda: {dataset}", fontsize=8)
+    ax.set_title(f"Stability-quality trade-off across lambda: {display_label(dataset, 'dataset')}", fontsize=8)
     ax.legend(fontsize=6)
     fig.tight_layout()
     save_figure(fig, f"fig_temporal_trajectories_h3_tradeoff_{dataset}")

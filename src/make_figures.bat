@@ -47,6 +47,17 @@ echo === fig_rnx_curves ===
 echo === fig_cd_diagram ===
 "venv\python.exe" -m src.figures.fig_cd_diagram --%MODE%
 
+REM The main-text CD diagram is the one over `report.main_methods` for
+REM scale-invariant stress; the default call above only produces the auc_rnx
+REM variant, so the remaining variants used by the paper and the supplement
+REM are generated explicitly (everything regenerable in one command).
+echo === fig_cd_diagram exp1_dr_benchmark_main/stress_scale_invariant ===
+"venv\python.exe" -m src.figures.fig_cd_diagram --%MODE% --experiment exp1_dr_benchmark_main --metric stress_scale_invariant
+echo === fig_cd_diagram exp1_dr_benchmark_main/trustworthiness_k7 ===
+"venv\python.exe" -m src.figures.fig_cd_diagram --%MODE% --experiment exp1_dr_benchmark_main --metric trustworthiness_k7
+echo === fig_cd_diagram exp1_dr_benchmark_main/auc_rnx ===
+"venv\python.exe" -m src.figures.fig_cd_diagram --%MODE% --experiment exp1_dr_benchmark_main --metric auc_rnx
+
 REM K11 (documentation/2026-09-12_plan_smeru_clanku.md): focused figure of
 REM graph layouts for the main text (polbooks/football/cora x 2 distances
 REM x 5 methods) - requires src\run_exp3_graph_layout.bat (E3).
@@ -120,6 +131,33 @@ REM Correlations of embedding quality metrics - requires exp1_dr_benchmark and
 REM exp1_cluster_geometry.
 echo === fig_metric_correlations ===
 "venv\python.exe" -m src.figures.fig_metric_correlations --%MODE%
+
+REM Veta 3 local quadratic law (identifiability, reserse
+REM 2026-09-17_zostreni_propozice2.md section 10) - requires
+REM run_exp10_identifiability_check.bat.
+echo === fig_identifiability_law ===
+"venv\python.exe" -m src.figures.fig_identifiability_law --%MODE%
+
+REM Replaces the exp13_neighbor_survival main-text table (2026-09-17
+REM article-shortening task) - requires run_exp13_neighbor_survival.bat.
+echo === fig_neighbor_survival ===
+"venv\python.exe" -m src.figures.fig_neighbor_survival --%MODE%
+
+REM Flagship figure (2026-09-17): MDS vs. tuned alpha-Sammon vs. t-SNE with
+REM original-space k-NN edges on the helix dataset - requires
+REM run_exp6_alpha_curves.bat/run_exp12_alpha_grid_extension.bat/
+REM run_exp1_dr_benchmark.bat to have already completed in the same mode.
+REM NOTE: --quick has no 'helix' data in exp1_dr_benchmark.quick/
+REM exp6_alpha_curves.quick - only --smoke/--full are usable (see
+REM fig_neighborhood_problem.py's module docstring).
+echo === fig_neighborhood_problem ===
+"venv\python.exe" -m src.figures.fig_neighborhood_problem --%MODE%
+
+REM E15 downstream discovery task (2026-09-18, DAMI editor objection about a
+REM missing "better map -> better finding" task) - requires
+REM run_exp15_discovery_task_stats.bat (which itself requires exp15_discovery_task).
+echo === fig_discovery_task ===
+"venv\python.exe" -m src.figures.fig_discovery_task --%MODE%
 
 echo === done: results\figures\ and clanek\img\ ===
 call "%~dp0common\no_sleep_off.bat"

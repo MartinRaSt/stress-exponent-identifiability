@@ -18,6 +18,7 @@ fabrication of substitute plots).
 from __future__ import annotations
 
 import argparse
+import functools
 from pathlib import Path
 
 import matplotlib
@@ -28,6 +29,7 @@ import pandas as pd
 
 from src.common.checkpoint import results_csv_path
 from src.common.config import ensure_dir, get_mode_path, get_path, load_config
+from src.common.display_labels import display_label  # noqa: F401 (re-exported, see below)
 from src.experiments.exp_common import add_mode_args, resolve_experiment_name, resolve_mode
 
 # Okabe & Ito (2008) colorblind-safe palette - used across all figures
@@ -116,16 +118,51 @@ def article_img_dir() -> Path:
     return ensure_dir(get_path("results_dir").parent / "clanek" / "img")
 
 
-def save_figure(fig, name: str) -> tuple[Path, Path]:
-    """Save the figure as a vector PDF to results/figures/ AND (only in
-    'full' mode) a copy to clanek/img/ (the same file, two locations
-    required by project rules). In quick/smoke mode the PDF goes only to
-    results/figures/<mode>/ and the second item of the return pair is None.
-    Returns (results_path, article_path | None)."""
+@functools.lru_cache(maxsize=1)
+def _article_figures_patterns() -> tuple[str, ...]:
+    """`figures.article_figures` from config.yaml - the whitelist of figure
+    names (without extension) that `save_figure` mirrors into clanek/img/
+    (author feedback 2026-09-17: orphan PDFs the article never
+    \\includegraphics-references must stop accumulating there - see the
+    config comment). Fail loud: an empty/missing list is a config error,
+    not a silent "copy everything" or "copy nothing"."""
+    patterns = load_config().get("figures", {}).get("article_figures")
+    if not patterns:
+        raise KeyError(
+            "Missing or empty 'figures.article_figures' in src/common/config.yaml - "
+            "required to decide which figures save_figure() mirrors into clanek/img/."
+        )
+    return tuple(str(p) for p in patterns)
+
+
+def _is_article_figure(name: str) -> bool:
+    """True if `name` is on the `figures.article_figures` whitelist - exact
+    match, or prefix match for entries ending in '*' (e.g. 'fig_cd_diagram_*'
+    covers 'fig_cd_diagram_<experiment>_<metric>', one file per
+    experiment/metric pair)."""
+    for pattern in _article_figures_patterns():
+        if pattern.endswith("*"):
+            if name.startswith(pattern[:-1]):
+                return True
+        elif name == pattern:
+            return True
+    return False
+
+
+def save_figure(fig, name: str) -> tuple[Path, Path | None]:
+    """Save the figure as a vector PDF to results/figures/ (ALWAYS, every
+    mode, every figure - nothing is ever lost) AND, only in 'full' mode AND
+    only if `name` is on the `figures.article_figures` whitelist, a copy to
+    clanek/img/ (author feedback 2026-09-17: clanek/img/ must contain only
+    figures the article actually \\includegraphics-references, or figures
+    explicitly slated to be wired in - see the config comment; everything
+    else stays in results/figures/ only). Returns (results_path,
+    article_path | None) - article_path is None both in quick/smoke mode
+    and in full mode for a figure not on the whitelist."""
     out_results = figures_out_dir() / f"{name}.pdf"
     fig.savefig(out_results, format="pdf", dpi=RASTER_DPI)
     out_article = None
-    if _CURRENT_MODE == "full":
+    if _CURRENT_MODE == "full" and _is_article_figure(name):
         out_article = article_img_dir() / f"{name}.pdf"
         fig.savefig(out_article, format="pdf", dpi=RASTER_DPI)
     plt.close(fig)
@@ -137,3 +174,20 @@ def save_csv_alongside(df: pd.DataFrame, name: str) -> Path:
     out = figures_out_dir() / f"{name}.csv"
     df.to_csv(out, index=False)
     return out
+
+
+# --- display_label: human-readable labels for raw config/CSV identifiers ---
+#
+# Author feedback 2026-09-17: 11 figure scripts printed raw identifiers
+# (e.g. "auc_rnx", "mnist_784", "sammon_alpha_smacof") straight into titles,
+# axis labels, ticks and legends - "vypada to blbe". `display_label` is the
+# ONE shared conversion point (fig_faithful_map used to keep a private
+# method_labels/dataset_labels config block just for itself - now merged
+# into `display_labels.<kind>` here, used by every figure script).
+#
+# Moved to `src/common/display_labels.py` on 2026-09-18 (author feedback:
+# LaTeX table generation in `src/experiments/report_tables.py` needs the
+# exact same lookup for table body cells, but must NOT import matplotlib) -
+# imported at the top of this module and re-exported here unchanged, so
+# every existing `from src.figures.fig_common import display_label` keeps
+# working without modification.

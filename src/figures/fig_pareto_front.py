@@ -37,6 +37,7 @@ from src.figures.fig_common import (
     WIDTH_FULL_WIDTH_IN,
     WIDTH_SINGLE_COL_IN,
     add_quick_arg,
+    display_label,
     mode_data_dir,
     parse_fig_mode,
     require_csv,
@@ -93,7 +94,7 @@ def _plot_panel(
         if label_points and method_name not in skip_label_methods:
             dx, dy = _LABEL_OFFSETS[k % len(_LABEL_OFFSETS)]
             ax.annotate(
-                method_name, (row["stress_scale_invariant"], row["auc_rnx"]), fontsize=fontsize,
+                display_label(method_name, "method"), (row["stress_scale_invariant"], row["auc_rnx"]), fontsize=fontsize,
                 xytext=(dx, dy), textcoords="offset points",
             )
 
@@ -166,7 +167,7 @@ def main() -> None:
         sub_ds = sub_main[sub_main["dataset"] == dataset_name].set_index("method")
         local_front = pareto_front_mask(sub_ds, {"auc_rnx": "max", "stress_scale_invariant": "min"})
         _plot_panel(ax_i, sub_ds.reset_index(), local_front, label_points=False, fontsize=4)
-        ax_i.set_title(dataset_name, fontsize=5.5)
+        ax_i.set_title(display_label(dataset_name, "dataset"), fontsize=5.5)
         ax_i.tick_params(labelsize=4)
         for method_name, is_front in local_front.items():
             small_multiple_rows.append({
