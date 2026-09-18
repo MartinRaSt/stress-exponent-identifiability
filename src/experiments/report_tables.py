@@ -906,7 +906,7 @@ def write_exp5_factorial_summary(mode: str, logger) -> Path | None:
         comment.append(f"check {r['init_a']} vs {r['init_b']}, {r['metric']}: max|diff|={r['max_abs_diff']:.3g}, n={int(r['n_pairs'])}")
     write_booktabs_tex(
         table, tables_dir / f"{EXP5_FACTORIAL_SUMMARY}.tex",
-        caption="E5 ablation: main effects of initialisation, epsilon quantile and alpha (descriptive summary; avg. rank 1 = best within factor)",
+        caption="E5 ablation: main effects of initialization, epsilon quantile and alpha (descriptive summary; avg. rank 1 = best within factor)",
         label=f"tab:{EXP5_FACTORIAL_SUMMARY}", comment_lines=comment,
     )
     logger.info("E5 factorial summary written: %s (%d rows).", out_csv, table.shape[0])

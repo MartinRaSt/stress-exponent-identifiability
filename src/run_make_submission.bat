@@ -12,9 +12,11 @@ REM
 REM Builds the FLAT (single-directory, no subfolders) journal-submission
 REM packages required by Springer/DAMI from the split clanek_en/ tree - see
 REM src/tools/make_submission.py for the full description. Writes
-REM submission/dami_en/ (main article, sn-jnl class) and
-REM submission/supplement_en/ (elsarticle supplement, cross-referenced into
-REM the main text) and VERIFIES both with a full LaTeX compile against the
+REM submission\dami\manuscript_en\ (main article, sn-jnl class) and
+REM submission\dami\supplement_en\ (elsarticle supplement, cross-referenced
+REM into the main text), both under a directory named after the TARGET
+REM JOURNAL so a later submission elsewhere cannot be mixed up with this
+REM one, and VERIFIES both with a full LaTeX compile against the
 REM existing reference PDFs (clanek_en/dami/main_dami.pdf,
 REM clanek_en/supplement/supplement.pdf) - page count and absence of
 REM "undefined"/"Overfull"/"invalid in math mode"/"Author undefined" in the
@@ -36,12 +38,14 @@ call "%~dp0common\no_sleep_on.bat"
 
 set VARIANT=%1
 if "%VARIANT%"=="" set VARIANT=both
-set OUTROOT=%2
+set JOURNAL=%2
+if "%JOURNAL%"=="" set JOURNAL=dami
+set OUTROOT=%3
 
 if "%OUTROOT%"=="" (
-  "venv\python.exe" -m src.tools.make_submission --variant %VARIANT%
+  "venv\python.exe" -m src.tools.make_submission --variant %VARIANT% --journal %JOURNAL%
 ) else (
-  "venv\python.exe" -m src.tools.make_submission --variant %VARIANT% --output-root "%OUTROOT%"
+  "venv\python.exe" -m src.tools.make_submission --variant %VARIANT% --journal %JOURNAL% --output-root "%OUTROOT%"
 )
 set "EXIT_CODE=%ERRORLEVEL%"
 

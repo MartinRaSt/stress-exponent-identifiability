@@ -16,15 +16,27 @@ from the split `clanek_en/` tree (`clanek_en/dami/`, `clanek_en/sections/`,
 require every source file for one manuscript in a single directory with no
 relative paths, which the split tree violates.
 
+Every package is built for ONE named target journal and lands under a
+directory named after it, so that a later submission to a different journal
+cannot be confused with this one:
+
+  submission/dami/manuscript_en/   main article, Springer Nature sn-jnl class
+  submission/dami/supplement_en/   supplement, elsarticle class
+  submission/dami/README.txt       what goes where in the submission form
+
+The journal is chosen with --journal (see JOURNALS below); the directory
+also carries a JOURNAL.txt stamp, and the build refuses to write into a
+directory stamped for a different journal.
+
 Two packages are produced, each self-contained:
 
-  dami_en        The main article (Springer Nature sn-jnl class), from
+  manuscript_en  The main article (Springer Nature sn-jnl class), from
                  clanek_en/dami/main_dami.tex.
   supplement_en  The supplement (elsarticle class, published separately by
                  Springer), from clanek_en/supplement/supplement.tex. Its
                  \\externaldocument cross-references into the main text are
                  rewired to the FRESH, just-verified main_dami.aux produced
-                 while building dami_en in the same run (never to the stale
+                 while building manuscript_en in the same run (never to the stale
                  checked-in .aux, and never to the separate preprint
                  clanek_en/main.tex) - see _wire_external_aux().
 
@@ -52,15 +64,18 @@ For each package this script:
      clanek_en/supplement/supplement.pdf). Any mismatch is a hard failure -
      a package that does not verify is worse than no package.
 
-Run (from anywhere, builds both packages under submission/):
+Run (from anywhere, builds both packages under submission/<journal>/):
     venv\\python.exe -m src.tools.make_submission
 or: src\\run_make_submission.bat   /   src/run_make_submission.sh
 
 CLI:
-    --output-root PATH   base directory for the two packages (default:
-                          <repo>/submission)
+    --journal KEY        target journal, one of JOURNALS (default: dami).
+                          Decides the output directory name and the contents
+                          of README.txt / JOURNAL.txt.
+    --output-root PATH   base directory holding the per-journal directories
+                          (default: <repo>/submission)
     --variant {dami,supplement,both}  which package(s) to produce (default:
-                          both; "supplement" still builds+verifies dami_en
+                          both; "supplement" still builds+verifies manuscript_en
                           first, because supplement_en's cross-references
                           depend on its freshly verified main_dami.aux)
     --skip-verify         skip the mandatory LaTeX compile-and-check step.
@@ -133,7 +148,7 @@ DAMI_SPEC = DocumentSpec(
     master_dir=CLANEK_EN / "dami",
     cwd_dir=CLANEK_EN,
     reference_pdf=CLANEK_EN / "dami" / "main_dami.pdf",
-    output_subdir_name="dami_en",
+    output_subdir_name="manuscript_en",
     extra_style_files=("sn-basic.bst",),
 )
 SUPPLEMENT_SPEC = DocumentSpec(
@@ -145,6 +160,45 @@ SUPPLEMENT_SPEC = DocumentSpec(
     output_subdir_name="supplement_en",
 )
 SPECS_BY_KEY = {DAMI_SPEC.key: DAMI_SPEC, SUPPLEMENT_SPEC.key: SUPPLEMENT_SPEC}
+
+
+@dataclasses.dataclass(frozen=True)
+class JournalProfile:
+    """Identity of the journal a package is built for.
+
+    Exists so that a package prepared for one journal can never be mistaken
+    for a package prepared for another: `key` names the output directory,
+    and the same key is written into a JOURNAL.txt stamp that the build
+    checks before overwriting anything.
+    """
+
+    key: str
+    name: str
+    publisher: str
+    submission_system: str
+    article_type: str
+    manuscript_class: str
+    upload_slots: tuple[tuple[str, str], ...]
+
+
+JOURNALS: dict[str, JournalProfile] = {
+    "dami": JournalProfile(
+        key="dami",
+        name="Data Mining and Knowledge Discovery",
+        publisher="Springer",
+        submission_system="https://dami.edmgr.com",
+        article_type="Regular Paper",
+        manuscript_class="sn-jnl (option sn-basic)",
+        upload_slots=(
+            ("manuscript_en/main_dami.pdf", "Manuscript (PDF)"),
+            ("manuscript_en/ (all files)", "LaTeX source files"),
+            ("supplement_en/supplement.pdf", "Supplementary Information"),
+            ("supplement_en/ (all files)", "Supplementary source files"),
+        ),
+    ),
+}
+
+JOURNAL_STAMP_NAME = "JOURNAL.txt"
 
 # --------------------------------------------------------------------------
 # LaTeX command patterns with a resolvable path/name argument. Each entry is
@@ -659,9 +713,105 @@ def compile_and_verify(
     )
 
 
-def _write_readme(result: BuildResult, spec: DocumentSpec) -> None:
+# By-products of the mandatory verification compile. They are regenerable
+# and are NOT source files, so they must not travel to the publisher: the
+# submission form asks for "all source files" of a directory, and a stray
+# .log or .aux in that upload is at best noise and at worst a reviewer
+# reading our local paths. The .bbl is deliberately NOT in this list -
+# Springer wants it, because the editorial system does not run BibTeX.
+VERIFICATION_ARTIFACT_SUFFIXES = (".aux", ".log", ".blg", ".out", ".synctex.gz")
+
+
+def _clean_verification_artifacts(flat_dir: Path, *, keep: frozenset[str]) -> list[str]:
+    """Deletes the compile by-products left in a finished package, keeping
+    the named files (an .aux another package needs for \\externaldocument).
+    Returns the names removed, for the run log."""
+    removed = []
+    for path in sorted(flat_dir.iterdir()):
+        if not path.is_file() or path.name in keep:
+            continue
+        if path.name.endswith(VERIFICATION_ARTIFACT_SUFFIXES):
+            path.unlink()
+            removed.append(path.name)
+    return removed
+
+
+def _claim_journal_dir(output_root: Path, journal: JournalProfile) -> Path:
+    """Returns (creating it if needed) the per-journal directory and makes
+    sure it does not already hold a package built for a different journal.
+
+    The stamp is what keeps two submission rounds apart: if the next
+    iteration targets another journal, it gets its own directory, and any
+    attempt to overwrite this one is refused instead of silently mixing
+    files from two different manuscript layouts."""
+    journal_dir = output_root / journal.key
+    stamp = journal_dir / JOURNAL_STAMP_NAME
+    if stamp.is_file():
+        first_line = stamp.read_text(encoding="utf-8").splitlines()[0].strip()
+        found_key = first_line.split(":", 1)[-1].strip() if ":" in first_line else first_line
+        if found_key != journal.key:
+            raise SubmissionBuildError(
+                f"{journal_dir} already holds a package built for journal "
+                f"'{found_key}', not '{journal.key}'. Refusing to overwrite - "
+                "delete that directory or pick a different --output-root."
+            )
+    journal_dir.mkdir(parents=True, exist_ok=True)
+    return journal_dir
+
+
+def _warn_about_legacy_layout(output_root: Path) -> None:
+    """Before 2026-09-18 the packages lived directly in submission/ with no
+    journal directory. Those leftovers are not regenerated by this script,
+    so say so loudly instead of leaving two competing copies around."""
+    legacy = [
+        name
+        for name in ("dami_en", "supplement_en")
+        if (output_root / name).is_dir()
+    ]
+    if legacy:
+        print(
+            "[make_submission] WARNING: found packages in the old layout "
+            f"({', '.join(output_root.joinpath(n).as_posix() for n in legacy)}). "
+            "They are stale and are NOT rebuilt - delete them so the only "
+            "packages left are the per-journal ones."
+        )
+
+
+def _write_journal_stamp(
+    journal_dir: Path, journal: JournalProfile, verified: dict[str, VerificationResult]
+) -> None:
+    """Writes the journal identity plus the submission-form map, so the
+    directory says on its own what it is for without consulting the docs."""
+    lines = [
+        f"journal: {journal.key}",
+        f"name: {journal.name} ({journal.publisher})",
+        f"submission system: {journal.submission_system}",
+        f"article type: {journal.article_type}",
+        f"manuscript class: {journal.manuscript_class}",
+        "",
+        "Upload map (Editorial Manager item type for each file):",
+    ]
+    for path_in_package, slot in journal.upload_slots:
+        lines.append(f"  {path_in_package}  ->  {slot}")
+    if verified:
+        lines += ["", "Verified page counts of this build:"]
+        for label, verification in sorted(verified.items()):
+            lines.append(f"  {label}: {verification.pages} pages")
+    else:
+        lines += ["", "NOT VERIFIED (built with --skip-verify) - do not submit."]
+    lines += [
+        "",
+        "Generated by src/tools/make_submission.py - regenerate rather than edit.",
+        "A package for a different journal gets its own directory next to this one.",
+    ]
+    (journal_dir / JOURNAL_STAMP_NAME).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_readme(result: BuildResult, spec: DocumentSpec, journal: JournalProfile) -> None:
     lines = [
         f"Flat submission package: {spec.output_subdir_name}",
+        f"Prepared for: {journal.name} ({journal.publisher}), "
+        f"{journal.article_type}",
         "Generated by src/tools/make_submission.py - do not edit by hand;",
         "regenerate instead (see src/run_make_submission.bat / .sh).",
         "",
@@ -717,10 +867,16 @@ def _wire_external_aux(
     shutil.copy2(src_aux, dependent_result.flat_dir / src_aux.name)
 
 
-def run(output_root: Path, variant: str, skip_verify: bool) -> dict[str, VerificationResult]:
-    """Orchestrates one or both packages. 'supplement' implies building
-    dami_en too (see module docstring) because supplement_en's
-    cross-references depend on its freshly verified aux."""
+def run(
+    output_root: Path,
+    variant: str,
+    skip_verify: bool,
+    journal: JournalProfile | None = None,
+) -> dict[str, VerificationResult]:
+    """Orchestrates one or both packages for one target journal. 'supplement'
+    implies building manuscript_en too (see module docstring) because
+    supplement_en's cross-references depend on its freshly verified aux."""
+    journal = journal or JOURNALS["dami"]
     keys_to_build = {
         "dami": ["dami"],
         "supplement": ["dami", "supplement"],
@@ -728,6 +884,9 @@ def run(output_root: Path, variant: str, skip_verify: bool) -> dict[str, Verific
     }[variant]
 
     output_root.mkdir(parents=True, exist_ok=True)
+    _warn_about_legacy_layout(output_root)
+    output_root = _claim_journal_dir(output_root, journal)
+    print(f"[make_submission] Target journal: {journal.name} -> {output_root}")
     results: dict[str, BuildResult] = {}
     verified: dict[str, VerificationResult] = {}
     for key in keys_to_build:
@@ -737,7 +896,7 @@ def run(output_root: Path, variant: str, skip_verify: bool) -> dict[str, Verific
         results[key] = result
         if result.needs_external_aux_from is not None:
             _wire_external_aux(result, output_root, verified)
-        _write_readme(result, spec)
+        _write_readme(result, spec, journal)
         print(f"[make_submission] '{key}': {len(result.manifest)} files copied.")
         if skip_verify:
             print(f"[make_submission] WARNING: --skip-verify set, '{key}' is UNVERIFIED - do not submit it.")
@@ -751,16 +910,41 @@ def run(output_root: Path, variant: str, skip_verify: bool) -> dict[str, Verific
             f"[make_submission] '{key}' OK: {verification.pages} pages "
             f"(reference {verification.reference_pages}), no forbidden log markers."
         )
+    # Only now, with every package built and verified (and any cross-package
+    # .aux already copied where it was needed), is it safe to throw the
+    # compile by-products away.
+    for key, result in results.items():
+        # A package that cross-references another one keeps the borrowed
+        # .aux - it is an input of this package, not a by-product of it.
+        keep = frozenset(
+            [f"{SPECS_BY_KEY[result.needs_external_aux_from].root_tex.stem}.aux"]
+            if result.needs_external_aux_from is not None
+            else []
+        )
+        removed = _clean_verification_artifacts(result.flat_dir, keep=keep)
+        if removed:
+            print(f"[make_submission] '{key}': removed compile by-products ({', '.join(removed)}).")
+    _write_journal_stamp(output_root, journal, verified)
     return verified
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
+        "--journal",
+        choices=sorted(JOURNALS),
+        default="dami",
+        help="Target journal; names the output directory and the JOURNAL.txt "
+        "stamp so packages for different journals cannot be mixed up "
+        "(default: dami).",
+    )
+    parser.add_argument(
         "--output-root",
         type=Path,
         default=PROJECT_ROOT / "submission",
-        help="Base directory for the flat packages (default: <repo>/submission).",
+        help="Base directory holding the per-journal directories "
+        "(default: <repo>/submission, so the packages land in "
+        "<repo>/submission/<journal>/).",
     )
     parser.add_argument(
         "--variant",
@@ -777,7 +961,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        verified = run(args.output_root, args.variant, args.skip_verify)
+        verified = run(
+            args.output_root, args.variant, args.skip_verify, JOURNALS[args.journal]
+        )
     except SubmissionBuildError as exc:
         print(f"[make_submission] FAILED: {exc}", file=sys.stderr)
         return 1

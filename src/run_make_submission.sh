@@ -13,9 +13,11 @@ set -euo pipefail
 # Builds the FLAT (single-directory, no subfolders) journal-submission
 # packages required by Springer/DAMI from the split clanek_en/ tree - see
 # src/tools/make_submission.py for the full description. Writes
-# submission/dami_en/ (main article, sn-jnl class) and
-# submission/supplement_en/ (elsarticle supplement, cross-referenced into
-# the main text) and VERIFIES both with a full LaTeX compile against the
+# submission/dami/manuscript_en/ (main article, sn-jnl class) and
+# submission/dami/supplement_en/ (elsarticle supplement, cross-referenced
+# into the main text), both under a directory named after the TARGET
+# JOURNAL so a later submission elsewhere cannot be mixed up with this one,
+# and VERIFIES both with a full LaTeX compile against the
 # existing reference PDFs (clanek_en/dami/main_dami.pdf,
 # clanek_en/supplement/supplement.pdf) - page count and absence of
 # "undefined"/"Overfull"/"invalid in math mode"/"Author undefined" in the
@@ -27,8 +29,10 @@ set -euo pipefail
 # check against, and clanek/generated/numbers.tex already generated
 # (src/run_main.sh).
 #
-# Usage: src/run_make_submission.sh [dami|supplement|both] [output-root]
-#   (default: both, submission/ next to this project)
+# Usage: src/run_make_submission.sh [dami|supplement|both] [journal] [output-root]
+#   (default: both dami submission/, i.e. the packages land in
+#   submission/dami/; "journal" selects the target journal - see JOURNALS in
+#   src/tools/make_submission.py - and therefore the directory name)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
@@ -46,10 +50,11 @@ if [ ! -x "$PYTHON" ]; then
 fi
 
 VARIANT="${1:-both}"
-OUTROOT="${2:-}"
+JOURNAL="${2:-dami}"
+OUTROOT="${3:-}"
 
 if [ -z "$OUTROOT" ]; then
-    "$PYTHON" -m src.tools.make_submission --variant "$VARIANT"
+    "$PYTHON" -m src.tools.make_submission --variant "$VARIANT" --journal "$JOURNAL"
 else
-    "$PYTHON" -m src.tools.make_submission --variant "$VARIANT" --output-root "$OUTROOT"
+    "$PYTHON" -m src.tools.make_submission --variant "$VARIANT" --journal "$JOURNAL" --output-root "$OUTROOT"
 fi

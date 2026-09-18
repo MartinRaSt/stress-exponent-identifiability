@@ -336,3 +336,65 @@ def test_run_builds_and_verifies_both_packages_end_to_end(tmp_path: Path) -> Non
     assert set(verified) == {"dami", "supplement"}
     assert verified["dami"].pages == verified["dami"].reference_pages
     assert verified["supplement"].pages == verified["supplement"].reference_pages
+    # The packages land under a directory named after the target journal, so
+    # a later submission elsewhere gets its own directory instead of
+    # overwriting this one.
+    journal_dir = tmp_path / "dami"
+    assert (journal_dir / "manuscript_en" / "main_dami.tex").is_file()
+    assert (journal_dir / "supplement_en" / "supplement.tex").is_file()
+    stamp = (journal_dir / ms.JOURNAL_STAMP_NAME).read_text(encoding="utf-8")
+    assert stamp.splitlines()[0] == "journal: dami"
+    assert "Data Mining and Knowledge Discovery" in stamp
+
+
+# --------------------------------------------------------------------------
+# Journal identity: one directory per target journal.
+# --------------------------------------------------------------------------
+
+
+def test_clean_verification_artifacts_keeps_sources_and_bbl(tmp_path: Path) -> None:
+    for name in ("main_dami.tex", "main_dami.bbl", "main_dami.pdf", "references.bib",
+                 "main_dami.aux", "main_dami.log", "main_dami.blg", "main_dami.out"):
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    removed = ms._clean_verification_artifacts(tmp_path, keep=frozenset())
+    assert set(removed) == {"main_dami.aux", "main_dami.log", "main_dami.blg", "main_dami.out"}
+    left = {p.name for p in tmp_path.iterdir()}
+    assert left == {"main_dami.tex", "main_dami.bbl", "main_dami.pdf", "references.bib"}
+
+
+def test_clean_verification_artifacts_keeps_a_borrowed_aux(tmp_path: Path) -> None:
+    (tmp_path / "main_dami.aux").write_text("x", encoding="utf-8")
+    (tmp_path / "supplement.aux").write_text("x", encoding="utf-8")
+    removed = ms._clean_verification_artifacts(tmp_path, keep=frozenset({"main_dami.aux"}))
+    assert removed == ["supplement.aux"]
+    assert (tmp_path / "main_dami.aux").is_file()
+
+
+def test_claim_journal_dir_creates_stamped_directory(tmp_path: Path) -> None:
+    journal = ms.JOURNALS["dami"]
+    journal_dir = ms._claim_journal_dir(tmp_path, journal)
+    assert journal_dir == tmp_path / "dami"
+    assert journal_dir.is_dir()
+
+
+def test_claim_journal_dir_refuses_a_directory_stamped_for_another_journal(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "dami").mkdir()
+    (tmp_path / "dami" / ms.JOURNAL_STAMP_NAME).write_text(
+        "journal: someother\n", encoding="utf-8"
+    )
+    with pytest.raises(ms.SubmissionBuildError, match="someother"):
+        ms._claim_journal_dir(tmp_path, ms.JOURNALS["dami"])
+
+
+def test_journal_stamp_lists_the_upload_map(tmp_path: Path) -> None:
+    journal = ms.JOURNALS["dami"]
+    ms._write_journal_stamp(tmp_path, journal, {})
+    stamp = (tmp_path / ms.JOURNAL_STAMP_NAME).read_text(encoding="utf-8")
+    assert "https://dami.edmgr.com" in stamp
+    assert "Regular Paper" in stamp
+    for path_in_package, slot in journal.upload_slots:
+        assert path_in_package in stamp
+        assert slot in stamp
+    assert "NOT VERIFIED" in stamp
