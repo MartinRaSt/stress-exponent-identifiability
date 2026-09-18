@@ -300,6 +300,8 @@ _DEFAULT_VALUE_LABEL_KINDS: dict[str, str] = {
     "method": "method",
     "method_name": "method",
     "Method": "method",
+    "method_a": "method",
+    "method_b": "method",
     "dataset": "dataset",
     "dataset_name": "dataset",
     "Dataset": "dataset",

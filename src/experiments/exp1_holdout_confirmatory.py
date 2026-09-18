@@ -208,7 +208,11 @@ def _write_booktabs_tex(df: pd.DataFrame, out_path: Path, caption: str, label: s
     `method_a` is dropped: it is the tested rule on every row, it is named in
     the caption, and it was one of the widest columns.
     """
-    cols = ["family", "hypothesis_id", "role", "subset", "metric", "method_b",
+    # "role" and "subset" are dropped: both follow from the family (F_A1 is the
+    # primary pooled test, F_A2 the secondary hold-out one, F_A3-F_A7 are
+    # exploratory) and are stated in the caption instead. With them the table
+    # came out 784pt wide against a 548pt target, below the legibility floor.
+    cols = ["family", "hypothesis_id", "metric", "method_b",
             "n", "median_diff", "p_perm", "p_holm", "reject_holm"]
     cols = [c for c in cols if c in df.columns]
     write_booktabs_tex(
@@ -412,7 +416,9 @@ def main() -> None:
     table.to_csv(out_csv, index=False)
     _write_booktabs_tex(
         table, tables_dir / "exp1_holdout_confirmatory.tex",
-        "Confirmatory and exploratory analysis of hold-out regime-L datasets (families F\\_A1-F\\_A7)",
+        "Pre-registered hypothesis families F\\_A1-F\\_A7 over the low-$\\rho_{NN}$ datasets. "
+        "F\\_A1 is the primary test on the pooled sample, F\\_A2 the secondary test on the hold-out subset alone, F\\_A3-F\\_A7 are exploratory. "
+        "The tested method is always the tuning-free rule; the Holm correction is applied within each family.",
         "tab:exp1_holdout_confirmatory",
     )
     logger.info("Written: %s (%d rows).", out_csv, table.shape[0])
