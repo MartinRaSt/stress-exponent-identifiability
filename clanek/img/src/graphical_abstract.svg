@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Project: Sammon mapping revisited (alpha-Sammon, scalable solver, temporal extension)
+  Author: Martin Radvansky, VSB - Technical University of Ostrava
+  Contact: martinradvansky@gmail.com
+  Created: 2026-09-17
+  Revised: 2026-09-17, round 1 (author review: fixed text overflowing frames,
+           badges overlapping neighbouring boxes, off-axis arrows, grey body
+           text, low-contrast/unclear rho_NN symbol, font sizes below ~8 pt).
+  Revised: 2026-09-17, round 2 (author review: merged each badge+histogram+
+           outcome-box triplet into one rounded block per branch so no small
+           arrow or caption crosses the diamond-to-block connector line;
+           shrank the decision diamond; added a plain-language name and a
+           properly typeset fraction (numerator/rule/denominator) so rho_NN
+           is understandable without reading the paper; spelled out "DR run"
+           and "plain MDS" (no unexplained abbreviations remain in the
+           figure). Badge text now uses three independent <text> elements
+           per label - NOT <tspan> - because svglib/reportlab cannot flow
+           tspans within one <text> run (see "Known svglib limitation" below).
+  Revised: 2026-09-17, round 3 (author review, purely geometric): aligned the
+           top edges of input_body, decision_pill and top_block_body on
+           y=11 (moved the pill up 4 mm and translated the whole top block
+           - header, histogram, text, exit arrow, output panel - up 2 mm as
+           one rigid unit, so nothing inside it had to be re-flowed); wrapped
+           the rho_NN fraction in two drawn parenthesis paths so it reads as
+           a formula, not two stray lines; gave top_histogram and
+           bottom_histogram an identical bounding box measured from each
+           block's own top edge and right edge (x=138-151, 1 mm below the
+           header, 3.5 mm tall), so the peaked and the flat icon line up
+           optically despite their different bar profiles.
+
+  Figure: graphical_abstract (standalone one-glance summary of the paper's core
+          claim, distinct from clanek/img/src/method_overview.svg which shows the
+          method pipeline). Message: whether tuning the Sammon weight exponent
+          alpha is worth it can be decided for free, before running any embedding,
+          from a single statistic of the input distance matrix (rho_NN); tuning it
+          also trades metric fidelity for local (neighbor) fidelity.
+  Units:   1 user unit = 1 mm (viewBox 0 0 190 95, page 190 mm x 95 mm, aspect 2:1,
+           same convention as method_overview.svg).
+  Fonts:   DejaVu Sans (covers Greek letters alpha/rho). No text below font-size
+           2.8 mm (~8 pt) anywhere in the figure, so the abstract stays legible
+           when a journal website shrinks it to a thumbnail; headline 4.0 mm,
+           box titles 3.3 mm bold, body text 2.8-3.0 mm, decision symbol rho 7.5 mm.
+  Colours: Okabe-Ito colour-blind safe palette: blue #0072B2 (metric-fidelity /
+           input), sky blue #56B4E9 (concentrated-distance branch), bluish
+           green #009E73 (spread-distance branch / local fidelity), orange
+           #E69F00 (decision statistic rho_NN shape/border), vermillion #D55E00
+           (cost / trade-off warning). ALL body text is near-black (#1A1A1A) or
+           pure black (#000000 for the rho_NN symbol) - no grey is used for any
+           text anywhere in this file; grey (#555555/#999999/#CCCCCC/#DDDDDD) is
+           used only for connector lines, dividers and decorative strokes.
+  Layers:  each top-level <g> is an Inkscape layer (inkscape:groupmode="layer").
+  Build:   make_graphical_abstract.bat / .sh (svglib + reportlab via
+           clanek/img/src/svg2pdf.py; Inkscape is not on PATH on this machine).
+  Note:    purely conceptual/schematic figure - no experimental data are
+           plotted. The four numeric values shown (13-point alpha grid, k=7,
+           3.7 -> 4.4 neighbors kept, ~40% higher stress) are measured
+           results, sourced in graphical_abstract_provenance.md; every other
+           icon (network, matrix, histograms, scatter icons) is a hand-placed
+           schematic drawing, not data.
+  Known svglib limitation (do not "fix" by reintroducing tspans): svglib's
+           SVG-to-reportlab conversion re-centres every <tspan> inside a
+           text-anchor="middle" <text> independently, and does not correctly
+           advance the pen position across sequential <tspan> elements at all
+           (also under text-anchor="start"). Any rho/subscript/continuation
+           label in this file is therefore built from independent, absolutely
+           positioned <text> elements (see e.g. top_header_rho / top_header_nn
+           / top_header_rest) rather than <tspan> children of one <text>.
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="190mm" height="95mm" viewBox="0 0 190 95"
+     font-family="DejaVu Sans" font-size="2.8" fill="#1A1A1A">
+
+  <!-- ======================= background ======================= -->
+  <g id="layer_background" inkscape:label="00 background" inkscape:groupmode="layer">
+    <rect id="page" x="0" y="0" width="190" height="95" fill="#FFFFFF"/>
+  </g>
+
+  <!-- ======================= headline ======================= -->
+  <g id="layer_headline" inkscape:label="01 headline" inkscape:groupmode="layer">
+    <text id="headline" x="95" y="6.6" text-anchor="middle" font-size="4.0" font-weight="bold" fill="#1A1A1A">Should you tune Sammon's exponent &#945;? One free number decides.</text>
+    <line id="headline_rule" x1="3" y1="9.3" x2="187" y2="9.3" stroke="#CCCCCC" stroke-width="0.25"/>
+  </g>
+
+  <!-- ======================= column 1: Input ======================= -->
+  <g id="layer_input" inkscape:label="10 input column" inkscape:groupmode="layer">
+    <rect id="input_body" x="3" y="11" width="36" height="61" rx="2" ry="2" fill="#E5EFF7"/>
+    <path id="input_head" d="M 4.5,11 H 37.5 A 1.5,1.5 0 0 1 39,12.5 V 18 H 3 V 12.5 A 1.5,1.5 0 0 1 4.5,11 Z" fill="#0072B2"/>
+    <text id="input_head_text" x="6" y="15.6" font-size="3.0" font-weight="bold" fill="#FFFFFF">Input</text>
+
+    <!-- schematic network / point-cloud icon (hand-placed, not data) -->
+    <g id="input_network_icon" stroke="#0072B2" stroke-width="0.3">
+      <line x1="16" y1="23" x2="22" y2="26"/>
+      <line x1="24" y1="22" x2="22" y2="26"/>
+      <line x1="28" y1="28" x2="22" y2="26"/>
+      <line x1="18" y1="30" x2="22" y2="26"/>
+      <line x1="16" y1="23" x2="18" y2="30"/>
+      <circle cx="16" cy="23" r="0.9" fill="#0072B2" stroke="none"/>
+      <circle cx="24" cy="22" r="0.9" fill="#0072B2" stroke="none"/>
+      <circle cx="28" cy="28" r="0.9" fill="#0072B2" stroke="none"/>
+      <circle cx="18" cy="30" r="0.9" fill="#0072B2" stroke="none"/>
+      <circle cx="22" cy="26" r="0.9" fill="#0072B2" stroke="none"/>
+    </g>
+    <text id="input_data_label1" x="21" y="34.3" text-anchor="middle" font-size="2.8" fill="#1A1A1A">vectors, graphs,</text>
+    <text id="input_data_label2" x="21" y="38.1" text-anchor="middle" font-size="2.8" fill="#1A1A1A">or sequences</text>
+
+    <polygon id="input_down_arrow" points="19.8,40.3 22,43.3 24.2,40.3" fill="#555555"/>
+
+    <!-- schematic 4x4 distance-matrix icon: shade depends only on |i-j| band, hand-drawn -->
+    <g id="input_matrix_icon">
+      <rect x="17.6" y="45.5" width="1.7" height="1.7" fill="#FFFFFF" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="19.3" y="45.5" width="1.7" height="1.7" fill="#B3D1E8" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="21.0" y="45.5" width="1.7" height="1.7" fill="#7FB3DA" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="22.7" y="45.5" width="1.7" height="1.7" fill="#4A94CC" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="17.6" y="47.2" width="1.7" height="1.7" fill="#B3D1E8" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="19.3" y="47.2" width="1.7" height="1.7" fill="#FFFFFF" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="21.0" y="47.2" width="1.7" height="1.7" fill="#B3D1E8" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="22.7" y="47.2" width="1.7" height="1.7" fill="#7FB3DA" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="17.6" y="48.9" width="1.7" height="1.7" fill="#7FB3DA" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="19.3" y="48.9" width="1.7" height="1.7" fill="#B3D1E8" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="21.0" y="48.9" width="1.7" height="1.7" fill="#FFFFFF" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="22.7" y="48.9" width="1.7" height="1.7" fill="#B3D1E8" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="17.6" y="50.6" width="1.7" height="1.7" fill="#4A94CC" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="19.3" y="50.6" width="1.7" height="1.7" fill="#7FB3DA" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="21.0" y="50.6" width="1.7" height="1.7" fill="#B3D1E8" stroke="#B9B9B9" stroke-width="0.1"/>
+      <rect x="22.7" y="50.6" width="1.7" height="1.7" fill="#FFFFFF" stroke="#B9B9B9" stroke-width="0.1"/>
+    </g>
+    <text id="input_matrix_sub" x="21" y="56.3" text-anchor="middle" font-size="2.9" fill="#1A1A1A">pairwise distances</text>
+    <text id="input_matrix_label" x="21" y="61.8" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#0072B2">distance matrix D</text>
+    <text id="input_matrix_label2" x="21" y="66.2" text-anchor="middle" font-size="2.8" fill="#1A1A1A">(only input needed)</text>
+  </g>
+
+  <!-- ======================= column 2: decision ======================= -->
+  <!-- Diamond is deliberately small (half-axes 10 x 9 mm) - it carries one
+       symbol, not a paragraph; the explanatory text lives below it, outside
+       the shape, where there is no taper eating into the line width. -->
+  <g id="layer_decision" inkscape:label="20 decision diamond" inkscape:groupmode="layer">
+    <!-- top edge y=11 matches input_body and top_block_body (author request, round 4) -->
+    <rect id="decision_pill" x="40" y="11" width="36" height="10.4" rx="3" fill="#FFF7E6" stroke="#E69F00" stroke-width="0.3"/>
+    <text id="decision_pill_text1" x="58" y="15.3" text-anchor="middle" font-size="2.8" fill="#1A1A1A">zero extra cost</text>
+    <text id="decision_pill_text2" x="58" y="19.3" text-anchor="middle" font-size="2.8" fill="#1A1A1A">no embedding run</text>
+
+    <polygon id="decision_diamond" points="58,33 68,42 58,51 48,42" fill="#FDF3E7" stroke="#E69F00" stroke-width="0.5"/>
+    <!-- rho_NN symbol: two independent <text> elements (NOT tspans - svglib/
+         reportlab cannot flow tspans within one <text>, see provenance file),
+         hand-positioned so "NN" reads clearly as a subscript of rho. -->
+    <text id="decision_rho" x="54.9" y="43.2" text-anchor="start" font-size="5.0" font-weight="normal" fill="#000000">&#961;</text>
+    <text id="decision_nn" x="58.1" y="45.0" text-anchor="start" font-size="2.4" font-weight="normal" fill="#000000">NN</text>
+
+    <!-- plain-language name of the symbol, directly below it (point 4: a
+         Greek letter alone does not tell the reader what it means) -->
+    <text id="decision_name1" x="58" y="55.3" text-anchor="middle" font-size="2.8" fill="#1A1A1A">nearest-neighbor</text>
+    <text id="decision_name2" x="58" y="59.1" text-anchor="middle" font-size="2.8" fill="#1A1A1A">distance ratio</text>
+
+    <!-- typeset as an actual fraction: numerator, rule, denominator, enclosed
+         in a tall drawn parenthesis on each side (round 4: was two lines with
+         a slash, then a numerator/rule/denominator without brackets - now a
+         genuine bracketed fraction so it reads as a formula at a glance). -->
+    <path id="decision_frac_lparen" d="M 41.8,61.8 Q 40.5,66.05 41.8,70.3" stroke="#1A1A1A" stroke-width="0.45" fill="none" stroke-linecap="round"/>
+    <text id="decision_frac_num" x="58" y="64.3" text-anchor="middle" font-size="2.8" fill="#1A1A1A">median NN distance</text>
+    <line id="decision_frac_rule" x1="42" y1="65.6" x2="74" y2="65.6" stroke="#1A1A1A" stroke-width="0.3"/>
+    <text id="decision_frac_den" x="58" y="69.4" text-anchor="middle" font-size="2.8" fill="#1A1A1A">median all distances</text>
+    <path id="decision_frac_rparen" d="M 74.2,61.8 Q 75.5,66.05 74.2,70.3" stroke="#1A1A1A" stroke-width="0.45" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- ======================= connectors between columns ======================= -->
+  <!-- One arrow in, one arrow out per element, each centred on the vertical
+       mid-line of the shapes it joins: y=42 (Input box / diamond centre),
+       y=26 (top block centre), y=58 (bottom block centre). -->
+  <g id="layer_connectors" inkscape:label="30 flow connectors" inkscape:groupmode="layer" stroke="#555555" fill="none">
+    <path id="conn_input_decision" d="M 39,42 H 46.8" stroke-width="0.4"/>
+    <polygon points="46.8,40.8 48.2,42.0 46.8,43.2" fill="#555555" stroke="none"/>
+
+    <path id="conn_decision_top" d="M 68,42 H 71 V 24 H 76.6" stroke-width="0.4"/>
+    <polygon points="76.6,22.8 78.0,24.0 76.6,25.2" fill="#555555" stroke="none"/>
+
+    <path id="conn_decision_bottom" d="M 68,42 H 71 V 58 H 76.6" stroke-width="0.4"/>
+    <polygon points="76.6,56.8 78.0,58.0 76.6,59.2" fill="#555555" stroke="none"/>
+  </g>
+
+  <!-- ======================= top block: rho_NN high -> concentrated ======================= -->
+  <!-- Single merged block (header + histogram + full outcome text) - replaces
+       the earlier separate badge + histogram + arrow + outcome box, so there
+       is no small arrow left between them and nothing for the "concentrated"
+       wording to cross (it is now part of the header, inside the block). -->
+  <g id="layer_top_lane" inkscape:label="40 top block (concentrated, merged)" inkscape:groupmode="layer">
+    <!-- top edge y=11 matches input_body and decision_pill (author request,
+         round 4); the whole block (header, histogram, text, exit arrow,
+         output panel) was translated up by 2 mm as one unit so everything
+         stays attached - nothing was resized or re-flowed. -->
+    <rect id="top_block_body" x="78" y="11" width="75" height="26" rx="2" fill="#EAF6FC" stroke="#56B4E9" stroke-width="0.4"/>
+    <path id="top_block_header" d="M 79.6,11 H 151.4 A 1.6,1.6 0 0 1 153,12.6 V 18 H 78 V 12.6 A 1.6,1.6 0 0 1 79.6,11 Z" fill="#56B4E9"/>
+    <text id="top_header_rho" x="81" y="15.3" text-anchor="start" font-size="3.0" font-weight="bold" fill="#FFFFFF">&#961;</text>
+    <text id="top_header_nn" x="83.1" y="16.3" text-anchor="start" font-size="2.3" font-weight="bold" fill="#FFFFFF">NN</text>
+    <text id="top_header_rest" x="87.9" y="15.3" text-anchor="start" font-size="3.0" font-weight="bold" fill="#FFFFFF">HIGH &#8212; distances concentrated</text>
+
+    <!-- schematic peaked histogram = distances concentrated around one value
+         (illustration, not data). Round 4: bounding box x=138-151 (13 mm,
+         2 mm from the block's right edge at 153), y=19-22.5 (1 mm below the
+         header at y=18, 3.5 mm tall) - IDENTICAL to bottom_histogram's
+         bounding box relative to its own block, so both icons sit at the
+         same offset from their block's top edge and right edge. -->
+    <g id="top_histogram" fill="#56B4E9">
+      <rect x="138.0" y="22.0" width="1.6" height="0.5"/>
+      <rect x="139.9" y="21.3" width="1.6" height="1.2"/>
+      <rect x="141.8" y="20.0" width="1.6" height="2.5"/>
+      <rect x="143.7" y="19.0" width="1.6" height="3.5"/>
+      <rect x="145.6" y="20.0" width="1.6" height="2.5"/>
+      <rect x="147.5" y="21.3" width="1.6" height="1.2"/>
+      <rect x="149.4" y="22.0" width="1.6" height="0.5"/>
+    </g>
+    <line x1="137.5" y1="22.5" x2="151.5" y2="22.5" stroke="#999999" stroke-width="0.2"/>
+
+    <text id="top_outcome_title" x="82" y="22" text-anchor="start" font-size="3.3" font-weight="bold" fill="#0072B2">Tuning has no effect</text>
+    <text id="top_outcome_sub" x="82" y="25.5" text-anchor="start" font-size="2.8" fill="#1A1A1A">weights ~ equal for every &#945;</text>
+    <text id="top_outcome_rule" x="82" y="29" text-anchor="start" font-size="3.0" font-weight="bold" fill="#0072B2">use &#945; = 0 (equal weights)</text>
+    <text id="top_outcome_note1" x="82" y="32.5" text-anchor="start" font-size="2.8" fill="#1A1A1A">no grid search</text>
+    <text id="top_outcome_note2" x="82" y="36" text-anchor="start" font-size="2.8" fill="#1A1A1A">saves the whole search (13-point grid here)</text>
+
+    <path id="top_arrow2" d="M 153,24 H 155.2" stroke="#555555" stroke-width="0.4" fill="none"/>
+    <polygon points="155.2,22.8 156.6,24.0 155.2,25.2" fill="#555555"/>
+
+    <rect id="top_output_frame" x="158" y="13" width="28" height="18" fill="#FFFFFF" stroke="#999999" stroke-width="0.3"/>
+    <g id="top_output_scatter" fill="#56B4E9">
+      <circle cx="161.5" cy="16.5" r="0.6"/><circle cx="166.0" cy="19.0" r="0.6"/><circle cx="170.5" cy="15.5" r="0.6"/>
+      <circle cx="174.0" cy="21.5" r="0.6"/><circle cx="178.5" cy="17.5" r="0.6"/><circle cx="183.0" cy="20.5" r="0.6"/>
+      <circle cx="163.5" cy="24.0" r="0.6"/><circle cx="168.5" cy="27.0" r="0.6"/><circle cx="175.0" cy="25.5" r="0.6"/>
+      <circle cx="181.0" cy="28.0" r="0.6"/><circle cx="184.5" cy="24.5" r="0.6"/>
+    </g>
+    <text id="top_output_label" x="172" y="34.6" text-anchor="middle" font-size="2.8" fill="#1A1A1A">global map</text>
+  </g>
+
+  <!-- ======================= bottom block: rho_NN low -> spread ======================= -->
+  <!-- Mirrors the top block structure exactly (same merge rationale). -->
+  <g id="layer_bottom_lane" inkscape:label="50 bottom block (spread, merged)" inkscape:groupmode="layer">
+    <rect id="bottom_block_body" x="78" y="45" width="75" height="26" rx="2" fill="#E3F5EF" stroke="#009E73" stroke-width="0.4"/>
+    <path id="bottom_block_header" d="M 79.6,45 H 151.4 A 1.6,1.6 0 0 1 153,46.6 V 52 H 78 V 46.6 A 1.6,1.6 0 0 1 79.6,45 Z" fill="#009E73"/>
+    <text id="bottom_header_rho" x="81" y="49.3" text-anchor="start" font-size="3.0" font-weight="bold" fill="#FFFFFF">&#961;</text>
+    <text id="bottom_header_nn" x="83.1" y="50.3" text-anchor="start" font-size="2.3" font-weight="bold" fill="#FFFFFF">NN</text>
+    <text id="bottom_header_rest" x="87.9" y="49.3" text-anchor="start" font-size="3.0" font-weight="bold" fill="#FFFFFF">LOW &#8212; distances spread out</text>
+
+    <!-- schematic flat/wide histogram = distances spread across the range
+         (illustration, not data). Round 4: bounding box x=138-151 (13 mm,
+         2 mm from the block's right edge at 153), y=53-56.5 (1 mm below the
+         header at y=52, 3.5 mm tall) - IDENTICAL offset from this block's own
+         top edge and right edge as top_histogram uses for the top block, so
+         the two icons line up even though this block did not move (only the
+         top block moved, to align its top edge with input_body/decision_pill
+         - see layer_top_lane). -->
+    <g id="bottom_histogram" fill="#009E73">
+      <rect x="138.0" y="53.5" width="1.6" height="3.0"/>
+      <rect x="139.9" y="53.2" width="1.6" height="3.3"/>
+      <rect x="141.8" y="53.4" width="1.6" height="3.1"/>
+      <rect x="143.7" y="53.0" width="1.6" height="3.5"/>
+      <rect x="145.6" y="53.35" width="1.6" height="3.15"/>
+      <rect x="147.5" y="53.2" width="1.6" height="3.3"/>
+      <rect x="149.4" y="53.4" width="1.6" height="3.1"/>
+    </g>
+    <line x1="137.5" y1="56.5" x2="151.5" y2="56.5" stroke="#999999" stroke-width="0.2"/>
+
+    <text id="bottom_outcome_title" x="82" y="56" text-anchor="start" font-size="3.3" font-weight="bold" fill="#009E73">Tuning pays off</text>
+    <text id="bottom_outcome_sub" x="82" y="60" text-anchor="start" font-size="2.8" fill="#1A1A1A">rule predicts &#945; directly &#8212; no search needed</text>
+    <text id="bottom_outcome_rule" x="82" y="64.5" text-anchor="start" font-size="2.8" fill="#009E73">neighbors kept: 3.7 &#8594; 4.4 (out of k = 7)</text>
+    <text id="bottom_outcome_cost" x="82" y="69" text-anchor="start" font-size="2.8" fill="#D55E00">trade-off: ~40% higher stress</text>
+
+    <path id="bottom_arrow2" d="M 153,58 H 155.2" stroke="#555555" stroke-width="0.4" fill="none"/>
+    <polygon points="155.2,56.8 156.6,58.0 155.2,59.2" fill="#555555"/>
+
+    <rect id="bottom_output_frame" x="158" y="47" width="28" height="18" fill="#FFFFFF" stroke="#999999" stroke-width="0.3"/>
+    <g id="bottom_output_scatter" fill="#009E73">
+      <circle cx="162.0" cy="51.0" r="0.6"/><circle cx="163.5" cy="52.5" r="0.6"/><circle cx="164.0" cy="50.0" r="0.6"/>
+      <circle cx="162.5" cy="53.5" r="0.6"/>
+      <circle cx="174.0" cy="57.0" r="0.6"/><circle cx="175.5" cy="58.5" r="0.6"/><circle cx="176.5" cy="56.0" r="0.6"/>
+      <circle cx="174.5" cy="59.5" r="0.6"/><circle cx="177.0" cy="58.0" r="0.6"/>
+      <circle cx="182.5" cy="50.5" r="0.6"/><circle cx="183.5" cy="52.0" r="0.6"/><circle cx="182.0" cy="53.0" r="0.6"/>
+    </g>
+    <text id="bottom_output_label" x="172" y="68.6" text-anchor="middle" font-size="2.8" fill="#1A1A1A">local map</text>
+  </g>
+
+  <!-- ======================= footer: metric vs. local fidelity trade-off ======================= -->
+  <g id="layer_footer" inkscape:label="60 footer trade-off" inkscape:groupmode="layer">
+    <rect id="footer_box" x="3" y="74" width="184" height="19.5" rx="2" fill="#F6F6F6" stroke="#DDDDDD" stroke-width="0.3"/>
+    <text id="footer_caption" x="95" y="78.6" text-anchor="middle" font-size="3.2" font-weight="bold" fill="#1A1A1A">One exponent &#945;, one trade-off</text>
+
+    <path id="footer_arrow_line" d="M 22,85.8 H 168" stroke="#555555" stroke-width="0.5" fill="none"/>
+    <polygon points="23.2,84.6 20.5,85.8 23.2,87.0" fill="#555555"/>
+    <polygon points="166.8,84.6 169.5,85.8 166.8,87.0" fill="#555555"/>
+
+    <text id="footer_left_label" x="40" y="84.0" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#0072B2">metric fidelity</text>
+    <text id="footer_left_sub" x="40" y="91.8" text-anchor="middle" font-size="2.8" fill="#1A1A1A">global distances preserved (&#945; = 0)</text>
+
+    <text id="footer_right_label" x="150" y="84.0" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#009E73">local fidelity</text>
+    <text id="footer_right_sub" x="150" y="91.8" text-anchor="middle" font-size="2.8" fill="#1A1A1A">neighbors preserved (higher &#945;)</text>
+  </g>
+
+</svg>

@@ -71,8 +71,22 @@ CLAUDE.md
 # Same policy for the English translation (clanek_en/) - it is not published
 # as text either, only cited; and for the internal Czech pre-submission
 # review rounds (review_cz_*/), which are working notes, not deliverables.
-clanek/
+clanek/*
 clanek_en/
+# Exception: the conceptual schematics are DRAWN by code (hand-authored SVG
+# plus svg2pdf.py, which registers the embedded TrueType font Springer
+# requires). That is a generator like any other in src/, so it belongs in the
+# repository - without it the two schematics could not be reproduced from a
+# clean checkout. The rendered PDFs stay out; they are outputs.
+!clanek/img/
+clanek/img/*
+!clanek/img/src/
+!clanek/img/build_figures.bat
+!clanek/img/build_figures.sh
+clanek/img/src/__pycache__/
+# The *_provenance.md notes stay out: they are Czech working notes that
+# point at unpublished internal material (reserse/, specifications).
+clanek/img/src/*_provenance.md
 review_cz_*/
 # The authors' 2013 conference papers - copyright IEEE, must not be
 # redistributed. README cites them with their DOIs instead.

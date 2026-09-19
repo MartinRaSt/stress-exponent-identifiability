@@ -324,6 +324,17 @@ Supplement and diagnostics: `fig_alpha_curves`, `fig_alpha_strip`,
 `fig_sammon_demo`, `fig_sgd_convergence`, `fig_temporal_trajectories`,
 `fig_identifiability_law` (E10, local quadratic law of Theorem 3).
 
+#### Conceptual schematics (`clanek/img/src/`)
+
+The two schematics of the paper (method overview, study design) and the
+graphical abstract are not data plots: their SVG sources are hand-authored
+and converted to PDF by `svg2pdf.py` (svglib + reportlab, used because
+Inkscape is not assumed on PATH). The converter registers DejaVu Sans as an
+embedded TrueType font and refuses to write a PDF that still references an
+unembedded font, which publishers reject. Build them with
+`clanek/img/build_figures.bat` (`.sh` on Linux/macOS); the rendered PDFs are
+outputs and are not tracked.
+
 ### 5.7 `src/tools/`
 
 - `estimate_runtime_from_csv.py` — estimates how long a full run will take
