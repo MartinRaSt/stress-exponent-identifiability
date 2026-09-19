@@ -51,11 +51,44 @@ switched all column/row headers from raw config keys to human-readable
 labels (now via the SHARED `display_labels.method`/`dataset` section +
 `src.figures.fig_common.display_label`, used by every figure script).
 
+2026-09-19 proportions fix (author feedback: "text overwhelms data" - the
+row label was clipped ("Hierarchical clusters" printed as "erarchical
+clusters") and the below-panel "fidelity strip" of 3 bars + printed values
+took almost as much vertical space as the scatter itself, so the axes
+(drawing) area was only ~39% of the canvas, see
+results/figures/check_axes_area.csv before this fix):
+  - the 3-bar fidelity strip (its own sub-axes per panel) is REMOVED; the
+    same three raw numbers (centroid rank corr. / spread rank corr. /
+    scale-invariant stress) are now a single compact "c/s/e" line drawn
+    INSIDE each scatter panel (small semi-transparent box, bottom-left
+    corner) - no separate axes, so the scatter keeps the full panel area.
+    The bar-chart visualization (longer bar = better) is dropped, not
+    just compressed, because at panel width ~74pt (372pt / 5 columns) a
+    legible bar+track+value no longer fit even on one row; the LaTeX
+    caption (clanek_en/sections/05_vysledky.tex) now carries what the
+    bars used to convey ("longer = better") in words instead.
+  - row labels (dataset names) are drawn HORIZONTALLY via `fig.text`
+    (using each row's actual axes y-center from `ax.get_position()`,
+    measured, not guessed) instead of a rotated `ax.set_ylabel` - the
+    previous rotated label's height (~1 pt/character along the reading
+    direction) exceeded the row's own axes height for the longest label
+    ("Hierarchical clusters") and was clipped by the canvas edge; a
+    horizontal, `textwrap`-wrapped label only needs canvas WIDTH (the left
+    margin), which is unconstrained by row count.
+  - the in-image suptitle and the multi-line explanatory caption text are
+    both removed (the LaTeX caption command already carries this, see
+    05_vysledky.tex) - freeing the top/bottom margins that used to hold
+    them so the panel grid itself can be taller (i.e. more legible),
+    while still keeping the OVERALL figure height comfortably under the
+    `figures.layout.main_text_max_height_frac_textheight` cap (checked by
+    `src/figures/check_axes_area.py`).
+
 Run: venv\\python.exe -m src.figures.fig_faithful_map [--quick|--full|--smoke]
 """
 from __future__ import annotations
 
 import sys
+import textwrap
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -70,6 +103,8 @@ from src.common.checkpoint import RunKey, load_embedding
 from src.experiments.config_experiments import load_experiments_config
 from src.experiments.exp_common import resolve_experiment_name
 from src.figures.fig_common import (
+    ANNOTATION_FONT_PT,
+    LABEL_FONT_PT,
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
@@ -83,6 +118,28 @@ from src.figures.fig_common import (
 
 FIG_NAME = "fig_faithful_map"
 BASE_EXPERIMENT_NAME = "exp1_dr_benchmark"
+
+# Layout constants (pure drawing geometry, not analysis parameters - see the
+# _FIDELITY_BAR_COLOR precedent this file used to have for the same
+# rationale). Explicit margins are used INSTEAD of fig.tight_layout(),
+# which does not lay out subgridspec children correctly here (large stray
+# whitespace, verified visually). Values re-tuned 2026-09-19 (proportions
+# fix, see the module docstring) after the fidelity-strip sub-axes was
+# removed: the left margin now only needs to hold a HORIZONTAL (not
+# rotated) row label, and top/bottom no longer hold a suptitle/caption.
+_GRID_LEFT = 0.15
+_GRID_RIGHT = 0.99
+_GRID_TOP = 0.91
+_GRID_BOTTOM = 0.02
+_GRID_HSPACE = 0.10
+_GRID_WSPACE = 0.06
+# Row (dataset) label: wrapped to this many characters per line so a
+# horizontal, non-rotated label fits within the left margin above
+# regardless of dataset name length (this is what fixed the 2026-09-19 bug
+# where "Hierarchical clusters", rotated 90 degrees, was taller than its
+# own row and got clipped by the canvas edge - see the module docstring).
+_ROW_LABEL_WRAP_CHARS = 12
+_ROW_LABEL_X = 0.01
 
 
 def _class_color_map(labels: np.ndarray) -> dict:
@@ -129,15 +186,6 @@ def _local_stress_residual(D: np.ndarray, Y: np.ndarray) -> np.ndarray:
     return r
 
 
-# Fidelity-strip style constants (pure styling, not analysis parameters -
-# see fig_faithful_map.stress_bar_max in config_experiments.yaml for the one
-# value that DOES affect the analysis, the stress normalization cap).
-_FIDELITY_BAR_COLOR = "#0072B2"   # OKABE_ITO[5] (blue)
-_FIDELITY_TRACK_COLOR = "#d9d9d9"
-_FIDELITY_ROW_LABELS = ["Centroid", "Spread", "Stress"]
-_FIDELITY_XLIM = (0.0, 1.38)  # room for the raw-value text past the bar end
-
-
 def _corr_to_fidelity(rho: float) -> float:
     """Maps a Spearman rank correlation in [-1, 1] ("higher = better
     preservation") to a [0, 1] bar length ("longer = better"), via
@@ -158,40 +206,16 @@ def _stress_to_fidelity(stress: float, stress_max: float) -> float:
     return float(np.clip(1.0 - stress / stress_max, 0.0, 1.0))
 
 
-def _draw_fidelity_strip(ax, centroid_rho: float, spread_rho: float, stress: float, stress_max: float, show_row_labels: bool) -> None:
-    """Draws the 3-bar "fidelity strip" (Centroid rank corr., Spread rank
-    corr., Stress) below one scatter panel: a light-gray full-length track
-    (the [0, 1] normalized scale) plus a colored bar of the normalized
-    fidelity, with the RAW metric value printed as text past the bar end
-    (see `_corr_to_fidelity`/`_stress_to_fidelity` - a missing/NaN metric
-    draws only the track and an "n/a" label, never a fabricated bar)."""
-    raw_values = [centroid_rho, spread_rho, stress]
-    fidelities = [
-        _corr_to_fidelity(centroid_rho),
-        _corr_to_fidelity(spread_rho),
-        _stress_to_fidelity(stress, stress_max),
-    ]
-    y_positions = [2, 1, 0]
-    for y, raw, fidelity in zip(y_positions, raw_values, fidelities):
-        ax.barh(y, 1.0, height=0.62, color=_FIDELITY_TRACK_COLOR, linewidth=0, zorder=1)
-        if np.isfinite(fidelity):
-            ax.barh(y, fidelity, height=0.62, color=_FIDELITY_BAR_COLOR, linewidth=0, zorder=2)
-            text = f"{raw:.2f}" if abs(raw) < 10 else f"{raw:.3g}"
-        else:
-            text = "n/a"
-        ax.text(1.05, y, text, va="center", ha="left", fontsize=4.3, zorder=3)
-
-    ax.set_xlim(*_FIDELITY_XLIM)
-    ax.set_ylim(-0.65, 2.65)
-    ax.set_xticks([])
-    if show_row_labels:
-        ax.set_yticks(y_positions)
-        ax.set_yticklabels(_FIDELITY_ROW_LABELS, fontsize=4.6)
-        ax.tick_params(axis="y", length=0, pad=1.5)
-    else:
-        ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(False)
+def _panel_metrics_text(centroid_rho: float, spread_rho: float, stress: float) -> str:
+    """Compact one-line replacement (2026-09-19 proportions fix, see the
+    module docstring) for the former 3-bar fidelity strip: the same three
+    raw values (centroid rank corr. / spread rank corr. / scale-invariant
+    stress), in that fixed order, as "c/s/e" (never fabricated - a
+    missing/NaN metric prints "n/a" in its slot, exactly like the removed
+    bars used to)."""
+    def fmt(v: float) -> str:
+        return f"{v:.2f}" if np.isfinite(v) else "n/a"
+    return f"{fmt(centroid_rho)}/{fmt(spread_rho)}/{fmt(stress)}"
 
 
 def _load_input_distance(dataset_name: str, n_max_overrides: dict, n_max_default: int) -> tuple[np.ndarray, np.ndarray | None]:
@@ -248,16 +272,20 @@ def main() -> None:
 
     n_rows, n_cols = len(datasets), len(methods)
     panel_width_in = WIDTH_FULL_WIDTH_IN / n_cols
-    # each dataset row = a scatter panel (height ratio 3) + its fidelity
-    # strip (height ratio 1) - see _draw_fidelity_strip; the 1.42 factor
-    # leaves just enough room for column titles, the row-label ylabel and
-    # the inter-row spacing (outer_gs hspace below). Explicit margins
-    # (left/right/top/bottom) are used INSTEAD of fig.tight_layout(), which
-    # does not lay out subgridspec children correctly (large stray
-    # whitespace, verified visually - see the task's PDF-inspection
-    # requirement).
-    fig = plt.figure(figsize=(WIDTH_FULL_WIDTH_IN, panel_width_in * n_rows * 1.15))
-    outer_gs = fig.add_gridspec(n_rows, n_cols, left=0.055, right=0.99, top=0.88, bottom=0.06, hspace=0.12, wspace=0.15)
+    # 2026-09-19 proportions fix (see the module docstring): each dataset
+    # row is now a SINGLE scatter panel (no fidelity-strip sub-axes), sized
+    # to keep panels square (honest distance comparison - stretching panels
+    # non-uniformly would visually misrepresent the very metric fidelity
+    # this figure demonstrates). The 1.14 factor is the measured (not
+    # guessed) remaining top-margin overhead for one-line-or-wrapped column
+    # titles; see check_axes_area.py / check_font_sizes.py for the
+    # after-the-fact verification that this keeps the figure under both the
+    # font floor and the main-text height cap.
+    fig = plt.figure(figsize=(WIDTH_FULL_WIDTH_IN, panel_width_in * n_rows * 1.06))
+    outer_gs = fig.add_gridspec(
+        n_rows, n_cols, left=_GRID_LEFT, right=_GRID_RIGHT, top=_GRID_TOP, bottom=_GRID_BOTTOM,
+        hspace=_GRID_HSPACE, wspace=_GRID_WSPACE,
+    )
 
     rng_csv = np.random.default_rng(csv_seed)
     csv_rows = []
@@ -268,19 +296,15 @@ def main() -> None:
         color_map = _class_color_map(y) if y is not None else None
 
         for j, method_name in enumerate(methods):
-            inner_gs = outer_gs[i, j].subgridspec(2, 1, height_ratios=[3, 1], hspace=0.12)
-            ax = fig.add_subplot(inner_gs[0])
-            ax_m = fig.add_subplot(inner_gs[1])
+            ax = fig.add_subplot(outer_gs[i, j])
             try:
                 Y = load_embedding(RunKey(EXPERIMENT_NAME, dataset_name, method_name, seed))
             except FileNotFoundError:
                 ax.axis("off")
-                ax_m.axis("off")
                 missing_panels.append((dataset_name, method_name))
                 continue
             if Y.shape[0] != D_in.shape[0]:
                 ax.axis("off")
-                ax_m.axis("off")
                 missing_panels.append((dataset_name, method_name))
                 continue
 
@@ -311,16 +335,40 @@ def main() -> None:
             for spine in ax.spines.values():
                 spine.set_linewidth(0.4)
             if i == 0:
-                ax.set_title(method_labels[method_name], fontsize=6.8)
+                # 2026-09-19 (font-size fix): titles longer than 12 chars are
+                # wrapped onto 2 lines at " (" - at LABEL_FONT_PT on the
+                # printed \textwidth (372pt / 5 columns = 74pt/column),
+                # "Sammon (alpha=1)" and "alpha-Sammon (tuned)" collided as
+                # one-line titles in adjacent columns.
+                title = method_labels[method_name]
+                if len(title) > 12 and " (" in title:
+                    title = title.replace(" (", "\n(", 1)
+                ax.set_title(title, fontsize=LABEL_FONT_PT)
             if j == 0:
-                ax.set_ylabel(dataset_labels[dataset_name], fontsize=6.8)
+                # 2026-09-19 proportions fix (see the module docstring):
+                # horizontal, wrapped, MEASURED-position row label instead
+                # of a rotated ax.set_ylabel (which clipped for long names).
+                pos = ax.get_position()
+                fig.text(
+                    _ROW_LABEL_X, (pos.y0 + pos.y1) / 2.0,
+                    textwrap.fill(dataset_labels[dataset_name], width=_ROW_LABEL_WRAP_CHARS, break_long_words=False),
+                    ha="left", va="center", fontsize=LABEL_FONT_PT, linespacing=1.05,
+                )
 
             row_geom = geometry_ok[(geometry_ok["dataset"] == dataset_name) & (geometry_ok["method"] == method_name)]
             row_e1 = e1_ok[(e1_ok["dataset"] == dataset_name) & (e1_ok["method"] == method_name)]
             cds = float(row_geom["centroid_dist_spearman"].iloc[0]) if not row_geom.empty else float("nan")
             css = float(row_geom["class_spread_spearman"].iloc[0]) if not row_geom.empty else float("nan")
             stress = float(row_e1["stress_scale_invariant"].iloc[0]) if not row_e1.empty else float("nan")
-            _draw_fidelity_strip(ax_m, cds, css, stress, stress_bar_max, show_row_labels=(j == 0))
+            # 2026-09-19 proportions fix (see the module docstring): the
+            # 3-bar fidelity strip (its own sub-axes) is replaced by a
+            # single compact in-panel line - no extra axes, so the scatter
+            # keeps the whole panel.
+            ax.text(
+                0.03, 0.03, _panel_metrics_text(cds, css, stress),
+                transform=ax.transAxes, ha="left", va="bottom", fontsize=ANNOTATION_FONT_PT, zorder=4,
+                bbox=dict(facecolor="white", alpha=0.75, edgecolor="none", boxstyle="round,pad=0.15"),
+            )
 
             n_points = Y.shape[0]
             take = min(csv_max_points, n_points)
@@ -338,13 +386,12 @@ def main() -> None:
                     "stress_fidelity": _stress_to_fidelity(stress, stress_bar_max),
                 })
 
-    fig.suptitle("Faithful map: class geometry preservation across methods (E1, seed=%d)" % seed, fontsize=8, y=0.985)
-    fig.text(
-        0.5, 0.012,
-        "Fidelity bars (Centroid, Spread: Spearman rank corr.; Stress: scale-invariant, capped at "
-        f"{stress_bar_max:g}) - longer bar = more faithful; raw value printed next to each bar.",
-        ha="center", va="bottom", fontsize=5.6,
-    )
+    # 2026-09-19 proportions fix (see the module docstring): the in-image
+    # suptitle and the multi-line explanatory caption are both removed -
+    # the LaTeX \caption (clanek_en/sections/05_vysledky.tex) already
+    # carries the figure title and now also explains the in-panel
+    # "centroid/spread/stress" triplet, freeing this vertical space for the
+    # panel grid itself.
     save_figure(fig, FIG_NAME)
     save_csv_alongside(pd.DataFrame(csv_rows), FIG_NAME)
 

@@ -47,7 +47,7 @@ from src.experiments.config_experiments import load_experiments_config
 from src.experiments.stats import maximal_insignificant_cliques
 from src.figures.fig_common import (
     OKABE_ITO,
-    WIDTH_FULL_WIDTH_IN,
+    WIDTH_SUPPLEMENT_FULL_IN,
     add_quick_arg,
     display_label,
     mode_data_dir,
@@ -58,6 +58,22 @@ from src.figures.fig_common import (
 )
 
 FIG_NAME = "fig_cd_diagram"
+
+
+def _measure_text_width_in(fig: plt.Figure, text: str, fontsize_pt: float) -> float:
+    """Rendered width (inches) of `text` at `fontsize_pt`, via a throwaway
+    Text artist drawn on `fig` with matplotlib's own Agg renderer (correctly
+    handles mathtext, e.g. the alpha symbol in method labels, unlike a raw
+    glyph-width estimate) - author feedback 2026-09-19 (second review): the
+    rank axis was squeezed by a FIXED left/right margin guess that did not
+    track the actual label text. Used once per side (the longest label on
+    that side) to size fig_cd_diagram.label_margin_padding_in-padded
+    margins from real content instead of a hand-tuned constant."""
+    probe = fig.text(0.0, 0.0, text, fontsize=fontsize_pt)
+    fig.canvas.draw()
+    bbox = probe.get_window_extent(renderer=fig.canvas.get_renderer())
+    probe.remove()
+    return float(bbox.width) / fig.dpi
 
 
 def _label_rows(n_methods: int) -> list[int]:
@@ -120,10 +136,18 @@ def _draw_cd_diagram(
     y_axis = y_of(d_axis)
     ax.plot([rankpos(rank_lo), rankpos(rank_hi)], [y_axis, y_axis], color=axis_color, linewidth=cfg["axis_linewidth"], solid_capstyle="butt", zorder=2)
     tick_len = cfg["tick_length_in"] / total_height_in
+    # 2026-09-19 (author feedback, second review): a tick MARK is drawn at
+    # every integer rank, but the tick NUMBER is only printed every
+    # tick_label_stride-th rank (always including 1 and n) - at n>=10 the
+    # 2-digit numbers printed at every rank ran into each other
+    # ("910111213"); this keeps every rank visually marked while giving
+    # printed numbers room to breathe.
+    stride = int(cfg["tick_label_stride"])
     for tick in range(1, n + 1):
         x_tick = rankpos(float(tick))
         ax.plot([x_tick, x_tick], [y_axis, y_axis + tick_len], color=axis_color, linewidth=cfg["tick_linewidth"], zorder=2)
-        ax.text(x_tick, y_axis + tick_len * 1.5, str(tick), ha="center", va="bottom", fontsize=cfg["tick_fontsize_pt"], color=axis_color)
+        if tick == 1 or tick == n or (tick - 1) % stride == 0:
+            ax.text(x_tick, y_axis + tick_len * 1.5, str(tick), ha="center", va="bottom", fontsize=cfg["tick_fontsize_pt"], color=axis_color)
 
     # CD reference bar (a short ruler of length CD anchored at rank 1), so
     # the reader can compare it by eye against any pair of points below
@@ -196,16 +220,38 @@ def main() -> None:
     cliques = maximal_insignificant_cliques(ranks, cd)
     n_bars = len(cliques)
 
-    cfg = load_experiments_config()["fig_cd_diagram"]
+    cfg = dict(load_experiments_config()["fig_cd_diagram"])
     n_left = math.ceil(n_methods / 2)
     total_label_rows = max(n_left, n_methods - n_left)
+    width_in = WIDTH_SUPPLEMENT_FULL_IN
+
+    # 2026-09-19 (author feedback, second review): left_margin_in/right_margin_in
+    # are measured from the ACTUAL label text of THIS run (see
+    # _measure_text_width_in and the config block comment), not a fixed
+    # guess - this is what lets the rank axis use the width the method
+    # names of a given experiment/metric do not need, instead of the same
+    # fixed margin regardless of how long the longest label happens to be.
+    probe_fig = plt.figure(figsize=(width_in, 1.0))
+    label_texts = [f"{display_label(name, 'method')} ({rank:.2f})" for name, rank in zip(methods, ranks)]
+    left_texts, right_texts = label_texts[:n_left], label_texts[n_left:]
+    padding_in = float(cfg["label_margin_padding_in"]) + float(cfg["label_gap_in"])
+    left_margin_in = max((_measure_text_width_in(probe_fig, t, cfg["label_fontsize_pt"]) for t in left_texts), default=0.0) + padding_in
+    right_margin_in = max((_measure_text_width_in(probe_fig, t, cfg["label_fontsize_pt"]) for t in right_texts), default=0.0) + padding_in
+    plt.close(probe_fig)
+    if left_margin_in + right_margin_in >= 0.9 * width_in:
+        raise ValueError(
+            f"fig_cd_diagram: measured label margins ({left_margin_in:.2f}in + {right_margin_in:.2f}in) leave no "
+            f"usable width for the rank axis out of {width_in:.2f}in - method names are too long for this figure width."
+        )
+    cfg["left_margin_in"] = left_margin_in
+    cfg["right_margin_in"] = right_margin_in
+
     # axis -> clique bars -> method labels -> bottom margin (see _draw_cd_diagram)
     total_height_in = (
         cfg["top_margin_in"] + cfg["axis_tick_gap_in"]
         + (n_bars * cfg["clique_row_height_in"] + cfg["clique_gap_in"] if n_bars > 0 else 0.0)
         + total_label_rows * cfg["label_row_height_in"] + cfg["bottom_margin_in"]
     )
-    width_in = WIDTH_FULL_WIDTH_IN
 
     fig = plt.figure(figsize=(width_in, total_height_in))
     ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))

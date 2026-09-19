@@ -532,6 +532,79 @@ figures:
   # clouds) in vector PDFs - project rule: dense layers rasterized at
   # 300 dpi, points/text vector (src/figures/fig_common.py::save_figure).
   raster_dpi: 300
+  # Author feedback 2026-09-19 (podklady/2026-09-19_FINAL_validace_rukopis.md
+  # section V2): every full-width figure was drawn at 190mm (7.48in) but
+  # \includegraphics[width=\textwidth] in the DAMI (Springer sn-jnl) layout
+  # inserts it at only 372pt (\the\textwidth, measured with a pdflatex probe
+  # on the sn-basic class - see the same section) = 131.23mm, i.e. LaTeX
+  # silently rescaled every figure by 372/538.6 = 0.691, shrinking every font
+  # below Springer Nature's ~8pt artwork minimum (worst case 2.42pt).
+  # `dami_full_width_pt` is now the SINGLE source of truth for the physical
+  # width figures are drawn at (src/figures/fig_common.py::WIDTH_FULL_WIDTH_IN
+  # = dami_full_width_pt / 72): drawing 1:1 at the print width means
+  # `[width=\textwidth]` no longer rescales anything, so the nominal
+  # matplotlib font.size IS the printed size. `label_min_pt`/`annotation_min_pt`
+  # are the two floors every figure script must respect (never hardcode a
+  # fontsize below these): axis/tick/legend labels >= label_min_pt, the
+  # smallest permitted annotation (dense per-panel text, subscripts) >=
+  # annotation_min_pt - matches the Springer Nature artwork guideline
+  # (~8pt, never below 7pt).
+  layout:
+    dami_full_width_pt: 372.0
+    # elsarticle (preprint,12pt) \textwidth = \columnwidth, measured the
+    # same way (pdflatex probe, \the\textwidth) for the standalone
+    # supplement (clanek_en/supplement/supplement.tex) - used only by
+    # src/figures/check_font_sizes.py to compute the print-time scale of
+    # figures embedded there; supplement figures are NOT redrawn to this
+    # width (WIDTH_SINGLE_COL_IN/WIDTH_FULL_WIDTH_IN target the DAMI main
+    # text, which is the narrower, binding constraint - see fig_common.py).
+    # Confirmed unchanged 2026-09-19 (supplement font-size fix) by the SAME
+    # pdflatex `\the\textwidth` probe re-run against
+    # clanek_en/supplement/supplement.tex: 390.0pt (\columnwidth==\textwidth
+    # there, single-column elsarticle preprint layout).
+    # `WIDTH_SUPPLEMENT_FULL_IN`/`WIDTH_SUPPLEMENT_THREEQ_IN`
+    # (src/figures/fig_common.py) are derived from this value for the eight
+    # supplement-ONLY figures (never \includegraphics-referenced from
+    # clanek_en/sections/*.tex) that were still drawn at a DAMI-sized or
+    # literal canvas and therefore printed at a non-1 LaTeX scale in the
+    # supplement - see the fig_common.py comment for the full list.
+    supplement_textwidth_pt: 390.0
+    label_min_pt: 8.0
+    annotation_min_pt: 7.4
+    # Author feedback 2026-09-19 (proportions pass): after the font-size fix
+    # above enlarged every label/annotation, several figures ended up with
+    # captions/legends/per-panel text boxes occupying most of the canvas and
+    # the actual plotting area (axes) shrunk to a small fraction - "text
+    # prebiji data". `dami_textheight_pt` is \the\textheight of the DAMI
+    # class (sn-jnl, sn-basic), measured the SAME way as dami_full_width_pt
+    # (pdflatex probe: `\typeout{\the\textheight}` on
+    # clanek_en/dami/main_dami.tex's preamble, 2026-09-19) - used only to
+    # cap the PRINTED height of main-text figures
+    # (main_text_max_height_frac_textheight below), so a tall figure is not
+    # pushed by LaTeX onto its own float page at the end of the document.
+    dami_textheight_pt: 552.69
+    # Main-text figures (figures.article_figures figures that are
+    # \includegraphics-referenced from clanek_en/sections/*.tex, i.e. NOT
+    # supplement-only) must print at or below this fraction of
+    # \textheight - checked by src/figures/check_axes_area.py against the
+    # native PDF MediaBox height (these figures draw 1:1 at dami_full_width_pt,
+    # so native height == printed height, see WIDTH_FULL_WIDTH_IN). No fixed
+    # exception list: a figure that needs to exceed this must be justified
+    # in the check's output by hand, not silently allowed by the checker.
+    main_text_max_height_frac_textheight: 0.45
+    # Minimum fraction of a figure's total canvas area that must be covered
+    # by the union of its Axes' plotting boxes (`ax.get_position()`, i.e.
+    # NOT tick labels/titles/axis labels, which live outside that box) -
+    # measured by src/figures/fig_common.py::axes_area_fraction and recorded
+    # by save_figure() into results/figures/[<mode>/]check_axes_area.csv,
+    # checked by src/figures/check_axes_area.py. Author requirement
+    # 2026-09-19: "kreslici plocha" (the data-bearing plot area) must
+    # visually dominate a figure over text/annotation chrome; for
+    # multi-panel figures this is the AVERAGE over panels, which is exactly
+    # what summing all panel boxes and dividing by the total canvas area
+    # computes (each panel contributes its own area, weighted by its own
+    # size - no separate "average of ratios" step needed).
+    min_axes_area_fraction: 0.55
   gallery_methods:
     # the figure (PDF) always plots ALL points of each embedding (rasterized,
     # visually indistinguishable from a subsample) - only the accompanying
@@ -572,6 +645,14 @@ figures:
     - fig_faithful_map
     - fig_graph_layouts
     - fig_identifiability_law
+    # Added 2026-09-19 (supplement font-size fix): fig_metric_correlations
+    # is \includegraphics-referenced in
+    # clanek_en/supplement/sections/s6_full_tables.tex but was missing from
+    # this whitelist, so save_figure() never refreshed its clanek/img/ copy
+    # - it was stuck at a stale 2026-09-17 PDF (drawn at the pre-fix
+    # WIDTH_FULL_WIDTH_IN=538.6pt) while every sibling supplement figure had
+    # already been regenerated.
+    - fig_metric_correlations
     - fig_pareto_front
     - fig_regime_map
     - fig_runtime_scaling

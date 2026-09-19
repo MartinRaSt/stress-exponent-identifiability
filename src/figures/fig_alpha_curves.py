@@ -50,6 +50,7 @@ from src.experiments.config_experiments import load_experiments_config
 from src.figures.fig_common import (
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
+    WIDTH_SUPPLEMENT_FULL_IN,
     add_quick_arg,
     display_label,
     parse_fig_mode,
@@ -64,6 +65,88 @@ FIG_ALL = "fig_alpha_curves_all"
 
 _COLOR_AUC = OKABE_ITO[5]  # blue
 _COLOR_STRESS = OKABE_ITO[6]  # vermillion
+
+# 2026-09-19 proportions fix (author feedback: on a twin-axis panel this
+# narrow, e.g. AUC_RNX in [0.370, 0.3825] for one dataset, matplotlib's
+# default tick locator had to add 3-4 decimal digits ("0.3825", "0.02975")
+# to make consecutive ticks distinguishable, and EVERY panel reserves this
+# margin on BOTH sides (AUC ticks on the left, stress ticks on the right) -
+# "popisky os zaberou vic sirky nez krivky", measured: axes area fell to
+# ~19% of the canvas with a full numeric tick axis on both sides of every
+# panel). Per the task's own suggestion ("normalizovat kazdy panel na
+# vlastni rozsah a popisovat jen min/max"): the y AXIS (ticks, tick labels)
+# is removed entirely for every panel (each panel already has its own,
+# independent y-range - there is no shared scale a tick axis could
+# usefully communicate across panels anyway) and replaced by two small,
+# color-matched text labels IN the panel's own top-left/bottom-left
+# (AUC) or top-right/bottom-right (stress) corner, giving the min and max
+# of that panel's own curve - the exact two numbers a reader would have
+# read off the removed axis, with no per-panel margin reserved for them.
+#
+# 2026-09-19 ROUND 2 (author feedback, having seen the typeset PDF: a
+# monotone curve has one of its own endpoints AT the corner where its label
+# sits - e.g. an increasing curve's lowest value is at its bottom-left
+# start - and a fixed 10% margins() headroom plus a translucent text
+# background was NOT enough at these small panel sizes: the label's own
+# line height (needed in POINTS, a fixed physical size) was often a LARGER
+# fraction of the panel's height than a blind 10% margin reserved, so the
+# label still visually merged with the curve/marker there). Fixed
+# geometrically instead of by a fixed guess: `_reserve_label_band` measures
+# the axes' ACTUAL rendered height (after the whole figure/grid is laid
+# out, via `fig.canvas.draw()`) and expands ylim by EXACTLY enough - in
+# points, converted to a fraction of the (now known) axes height - that a
+# label of `fontsize` can never reach the data, on either end, regardless
+# of where in x the curve's own extremum happens to sit. This needs the
+# figure's layout to be FINAL first, so labeling is a two-pass process:
+# `_plot_twin_panel` only records (ax, values, color, side) in
+# `label_specs` (via `_pending_range_labels`) while plotting; the caller
+# draws the finished figure once, then calls `_apply_range_labels` for
+# every recorded spec.
+_LABEL_LINE_HEIGHT_FACTOR = 1.45  # generous line height (leading) as a multiple of the font's point size
+_LABEL_EDGE_GAP_PT = 2.0          # extra clearance between the label's own line box and the data extremum
+_MAX_LABEL_BAND_FRAC = 0.45       # safety cap so a degenerate (very short) axes cannot blow up the reserved band
+
+
+def _pending_range_labels(ax, values: np.ndarray, color: str, side: str, fontsize: float) -> tuple:
+    """Removes the y-axis ticks/labels of `ax` (see the module docstring
+    above) and returns a (ax, lo, hi, color, side, fontsize) spec for
+    `_apply_range_labels` to place AFTER the whole figure is laid out. Does
+    NOT touch ylim or draw any text yet - the final axes height is not known
+    until the whole grid (titles, other panels) exists."""
+    ax.set_yticks([])
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return (ax, float("nan"), float("nan"), color, side, fontsize)
+    return (ax, float(np.min(finite)), float(np.max(finite)), color, side, fontsize)
+
+
+def _apply_range_labels(fig, label_specs: list[tuple]) -> None:
+    """Second pass (see the module docstring above): `fig` must already be
+    FULLY laid out (this function calls `fig.canvas.draw()` once itself,
+    then reads each axes' final rendered height) - call this AFTER every
+    title/label/panel of `fig` has been set, not before. For every
+    (ax, lo, hi, color, side, fontsize) spec: reserves a band of height
+    (`_LABEL_LINE_HEIGHT_FACTOR` * fontsize + `_LABEL_EDGE_GAP_PT`) points
+    at the top and bottom of `ax` (by expanding ylim - a real reservation,
+    not a fixed guess, so the label geometrically CANNOT reach the plotted
+    curve on either end) and prints the min/max there, never fabricated."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for ax, lo, hi, color, side, fontsize in label_specs:
+        if not (np.isfinite(lo) and np.isfinite(hi)) or hi <= lo:
+            continue
+        axes_height_px = ax.get_window_extent(renderer=renderer).height
+        axes_height_pt = axes_height_px * 72.0 / fig.dpi
+        line_height_pt = fontsize * _LABEL_LINE_HEIGHT_FACTOR + _LABEL_EDGE_GAP_PT
+        frac = min(line_height_pt / axes_height_pt, _MAX_LABEL_BAND_FRAC)
+        rng = hi - lo
+        new_range = rng / max(1.0 - 2.0 * frac, 1e-6)
+        ax.set_ylim(lo - frac * new_range, hi + frac * new_range)
+
+        decimals = min(max(0, int(np.ceil(-np.log10(rng))) + 1), 4)
+        x = 0.03 if side == "left" else 0.97
+        ax.text(x, 1.0 - frac / 2.0, f"{hi:.{decimals}f}", transform=ax.transAxes, ha=side, va="center", color=color, fontsize=fontsize, zorder=4)
+        ax.text(x, frac / 2.0, f"{lo:.{decimals}f}", transform=ax.transAxes, ha=side, va="center", color=color, fontsize=fontsize, zorder=4)
 
 
 def _median_iqr_by_alpha(df: pd.DataFrame, dataset_name: str, metric: str) -> pd.DataFrame:
@@ -85,22 +168,25 @@ def _plot_twin_panel(
     title_fontsize: float = 7,
     tick_labelsize: float = 6,
     ylabel_fontsize: float = 6.5,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[tuple]]:
     """Plot a single panel (auc_rnx on the left axis, stress on the right
-    axis, twinx) for a given dataset. Returns a long DataFrame (dataset,
-    alpha, metric, median, q25, q75, n_seeds) to save to CSV."""
+    axis, twinx) for a given dataset. Returns (long DataFrame to save to
+    CSV, label_specs) - `label_specs` are the (ax, lo, hi, color, side,
+    fontsize) tuples `_apply_range_labels` needs, collected here but NOT
+    yet drawn (see that function's docstring for why the labeling is a
+    deferred second pass over the whole figure)."""
     auc = _median_iqr_by_alpha(df, dataset_name, "auc_rnx")
     stress = _median_iqr_by_alpha(df, dataset_name, "stress_scale_invariant")
 
     ax_auc.plot(auc["alpha"], auc["median"], color=_COLOR_AUC, marker="o", markersize=2.5, linewidth=1.1, zorder=3)
     ax_auc.fill_between(auc["alpha"], auc["q25"], auc["q75"], color=_COLOR_AUC, alpha=0.2, linewidth=0, zorder=2, rasterized=True)
-    ax_auc.tick_params(axis="y", labelcolor=_COLOR_AUC, labelsize=tick_labelsize)
+    label_specs = [_pending_range_labels(ax_auc, pd.concat([auc["median"], auc["q25"], auc["q75"]]).to_numpy(), _COLOR_AUC, "left", tick_labelsize)]
     ax_auc.tick_params(axis="x", labelsize=tick_labelsize)
 
     ax_stress = ax_auc.twinx()
     ax_stress.plot(stress["alpha"], stress["median"], color=_COLOR_STRESS, marker="s", markersize=2.2, linewidth=1.0, linestyle="--", zorder=3)
     ax_stress.fill_between(stress["alpha"], stress["q25"], stress["q75"], color=_COLOR_STRESS, alpha=0.15, linewidth=0, zorder=1, rasterized=True)
-    ax_stress.tick_params(axis="y", labelcolor=_COLOR_STRESS, labelsize=tick_labelsize)
+    label_specs.append(_pending_range_labels(ax_stress, pd.concat([stress["median"], stress["q25"], stress["q75"]]).to_numpy(), _COLOR_STRESS, "right", tick_labelsize))
 
     ax_auc.set_title(display_label(dataset_name, "dataset"), fontsize=title_fontsize)
     if show_ylabel:
@@ -110,7 +196,7 @@ def _plot_twin_panel(
     auc["metric"] = "auc_rnx"
     stress["dataset"] = dataset_name
     stress["metric"] = "stress_scale_invariant"
-    return pd.concat([auc, stress], ignore_index=True)
+    return pd.concat([auc, stress], ignore_index=True), label_specs
 
 
 def _make_main_figure(df: pd.DataFrame, main_datasets: list[str]) -> tuple[plt.Figure, pd.DataFrame]:
@@ -119,16 +205,33 @@ def _make_main_figure(df: pd.DataFrame, main_datasets: list[str]) -> tuple[plt.F
         raise KeyError(f"exp6_alpha_curves_results.csv is missing datasets {missing} from main_figure_datasets.")
 
     n = len(main_datasets)
-    fig, axes = plt.subplots(1, n, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.24), sharex=True)
+    # 2026-09-19 proportions fix: fig.tight_layout() is UNRELIABLE with
+    # twinx() axes (matplotlib limitation - "Tight layout not applied"
+    # observed once the y-axis tick-label footprint changed here, silently
+    # shrinking every axes to a sliver); constrained_layout (used
+    # everywhere else in this project for the same reason, see
+    # fig_graph_layouts.py) solves panel/label spacing from actual bounding
+    # boxes instead and does not have this failure mode.
+    fig, axes = plt.subplots(
+        1, n, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.38), sharex=True,
+        constrained_layout=True,
+    )
+    fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.02, wspace=0.04, hspace=0.02)
     if n == 1:
         axes = [axes]
     csv_pieces = []
+    all_label_specs: list[tuple] = []
     for i, (ax, dataset_name) in enumerate(zip(axes, main_datasets)):
-        piece = _plot_twin_panel(ax, dataset_name, df, show_ylabel=(i == 0))
+        piece, label_specs = _plot_twin_panel(ax, dataset_name, df, show_ylabel=(i == 0))
         csv_pieces.append(piece)
+        all_label_specs.extend(label_specs)
         ax.set_xlabel("alpha", fontsize=6.5)
     fig.suptitle("AUC$_{RNX}$ (blue, left) and normalized stress (red, right) vs. alpha, median $\\pm$ IQR over 5 seeds", fontsize=8)
-    fig.tight_layout(rect=(0, 0, 1, 0.90))
+    # Second pass (see _apply_range_labels docstring): the figure is now
+    # fully laid out (every title/label set), so each panel's true rendered
+    # height is known and the min/max labels can be placed with a
+    # GEOMETRICALLY guaranteed gap from the curve, not a fixed guess.
+    _apply_range_labels(fig, all_label_specs)
     return fig, pd.concat(csv_pieces, ignore_index=True)
 
 
@@ -160,11 +263,25 @@ def _make_supplement_figure_pages(
     for page_idx, page_datasets in enumerate(pages, start=1):
         n = len(page_datasets)
         n_rows = int(np.ceil(n / n_cols))
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(WIDTH_FULL_WIDTH_IN, panel_height_in * n_rows))
+        # 2026-09-19 (supplement font-size fix): this figure is embedded
+        # ONLY in the supplement (clanek_en/supplement/sections/s2_alpha_curves.tex,
+        # [width=\textwidth]) - drawn at WIDTH_SUPPLEMENT_FULL_IN (390pt) so
+        # that embed is a no-op scale (see fig_common.py), instead of the
+        # DAMI-sized WIDTH_FULL_WIDTH_IN (372pt) that used to leave a small
+        # 1.05x LaTeX enlargement on top of already-too-small literal
+        # fontsize= values from config_experiments.yaml. constrained_layout
+        # (not tight_layout+rect) re-solves panel/title/legend spacing from
+        # actual bounding boxes now that the fonts below are bigger.
+        fig, axes = plt.subplots(
+            n_rows, n_cols, figsize=(WIDTH_SUPPLEMENT_FULL_IN, panel_height_in * n_rows),
+            constrained_layout=True,
+        )
+        fig.set_constrained_layout_pads(w_pad=0.03, h_pad=0.03, wspace=0.06, hspace=0.12)
         axes_flat = np.asarray(axes).reshape(-1)
         csv_pieces = []
+        all_label_specs: list[tuple] = []
         for i, dataset_name in enumerate(page_datasets):
-            piece = _plot_twin_panel(
+            piece, label_specs = _plot_twin_panel(
                 axes_flat[i],
                 dataset_name,
                 df,
@@ -175,6 +292,7 @@ def _make_supplement_figure_pages(
             )
             piece["page"] = page_idx
             csv_pieces.append(piece)
+            all_label_specs.extend(label_specs)
         for j in range(n, len(axes_flat)):
             axes_flat[j].axis("off")
         missing_note = f" ({len(missing)} missing: {missing})" if (missing and page_idx == n_pages) else ""
@@ -183,7 +301,9 @@ def _make_supplement_figure_pages(
             f"stress (red, right) vs. alpha, {n} datasets" + missing_note,
             fontsize=suptitle_fontsize,
         )
-        fig.tight_layout(rect=(0, 0, 1, 0.97))
+        # Second pass (see _apply_range_labels docstring): deferred until
+        # the whole page (all panels, titles, suptitle) is laid out.
+        _apply_range_labels(fig, all_label_specs)
         out.append((fig, pd.concat(csv_pieces, ignore_index=True)))
     return out
 

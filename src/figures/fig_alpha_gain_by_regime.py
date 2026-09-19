@@ -58,8 +58,10 @@ import pandas as pd
 
 from src.experiments.exp1_regime_stratified import REGIME_ORDER, build_dataset_regime_table
 from src.figures.fig_common import (
+    ANNOTATION_FONT_PT,
+    LABEL_FONT_PT,
     OKABE_ITO,
-    WIDTH_SINGLE_COL_IN,
+    WIDTH_SUPPLEMENT_THREEQ_IN,
     add_quick_arg,
     mode_data_dir,
     parse_fig_mode,
@@ -166,7 +168,13 @@ def main() -> None:
 
     curves = compute_gain_curves(exp6_ok, dataset_regime, logger=logger)
 
-    fig, ax = plt.subplots(figsize=(WIDTH_SINGLE_COL_IN, WIDTH_SINGLE_COL_IN * 0.82))
+    # 2026-09-19 (supplement font-size fix): this figure is embedded ONLY in
+    # the supplement (clanek_en/supplement/sections/s2_alpha_curves.tex,
+    # [width=0.75\columnwidth]) - drawn at WIDTH_SUPPLEMENT_THREEQ_IN
+    # (292.5pt, see fig_common.py) so that embed is a no-op scale, instead
+    # of the literal WIDTH_SINGLE_COL_IN (255.12pt) that left a 1.15x LaTeX
+    # enlargement on top of an already-too-small title/legend fontsize=.
+    fig, ax = plt.subplots(figsize=(WIDTH_SUPPLEMENT_THREEQ_IN, WIDTH_SUPPLEMENT_THREEQ_IN * 0.82))
     for regime in REGIME_ORDER:
         sub = curves[curves["regime"] == regime]
         if sub.empty:
@@ -185,9 +193,9 @@ def main() -> None:
     ax.set_ylabel("AUC$_{RNX}(\\alpha)$ / AUC$_{RNX}(0)$ (median, IQR band)")
     ax.set_title(
         r"$\alpha$ gain over MDS by nearest-neighbor" + "\n" + r"distance ratio $\rho_{NN}$ (high $\rho_{NN}$ = concentrated distances)",
-        fontsize=7,
+        fontsize=LABEL_FONT_PT,
     )
-    ax.legend(fontsize=6, loc="best")
+    ax.legend(fontsize=ANNOTATION_FONT_PT, loc="best")
     fig.tight_layout(rect=(0, 0, 1, 0.98))
     save_figure(fig, FIG_NAME)
     save_csv_alongside(curves, FIG_NAME)

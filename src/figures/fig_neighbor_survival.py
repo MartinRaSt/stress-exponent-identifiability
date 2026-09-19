@@ -113,6 +113,8 @@ from src.experiments.exp13_neighbor_survival import (
     policy_label,
 )
 from src.figures.fig_common import (
+    ANNOTATION_FONT_PT,
+    LABEL_FONT_PT,
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
@@ -129,6 +131,14 @@ FIG_NAME = "fig_neighbor_survival"
 # Row order (top to bottom) = panel order (fixed, matches
 # exp13_neighbor_survival.build_survival_table's own panel dict order).
 _PANEL_ORDER = [PANEL_LOW_RATIO, PANEL_REST]
+
+# 2026-09-19 proportions fix: SHORT row labels for THIS figure only (not
+# the shared display_labels.regime config, which other tables/captions
+# still use in full) - the full "Low rho_NN: tuning helps" text, rotated,
+# no longer fit its own row once the figure height was reduced to meet the
+# main-text height cap; the dropped "tuning helps/does not help" half and
+# the dataset counts move to the caption (05_vysledky.tex) instead.
+_SHORT_REGIME_LABEL = {PANEL_LOW_RATIO: r"Low $\rho_{NN}$", PANEL_REST: r"Mid/high $\rho_{NN}$"}
 
 # Column metrics: (results column, axis label built with the actual k).
 _METRIC_NEIGHBORS = "neighbors_kept"
@@ -163,6 +173,33 @@ def _category_order(alpha_table: list[float]) -> list[str]:
     exactly (whatever `exp13_neighbor_survival.alpha_table` currently is,
     e.g. the narrower --smoke grid)."""
     return [policy_label(a) for a in sorted(alpha_table)] + [POLICY_LABEL_PRED, POLICY_LABEL_BEST]
+
+
+# 2026-09-19 (font-size fix): the y-tick row labels used the FULL
+# display_label(..., "policy") text (e.g. "alpha-best (grid optimum, upper
+# bound)") - at LABEL_FONT_PT on the printed \textwidth (372pt, down from
+# the old 538.6pt-wide canvas) that text alone was wider than the whole
+# panel, crushing the dot-plot axis to a sliver and overlapping its own
+# value label. The full wording is still shown once, in the legend below
+# the figure (`display_label(POLICY_LABEL_PRED/POLICY_LABEL_BEST, "policy")`)
+# - these are short row-only aliases, not a second source of truth for the
+# wording. Any category not in this table (should not occur - category_order
+# is exactly `policy_label(alpha)` for alpha in the fixed alpha_table, plus
+# POLICY_LABEL_PRED/POLICY_LABEL_BEST) falls back to the full label rather
+# than failing, since a tick label that is merely longer than intended is
+# not a correctness bug worth crashing the whole figure over.
+_POLICY_TICK_LABEL_SHORT = {
+    "alpha=0 (MDS)": r"$\alpha=0$ (MDS)",
+    "alpha=1 (Sammon)": r"$\alpha=1$ (Sammon)",
+    "alpha=2 (Kamada-Kawai)": r"$\alpha=2$ (K.-Kawai)",
+    POLICY_LABEL_PRED: r"$\alpha$-pred",
+    POLICY_LABEL_BEST: r"$\alpha$-best",
+}
+
+
+def _short_policy_tick_label(category: str) -> str:
+    """Row label for the y-axis tick (see `_POLICY_TICK_LABEL_SHORT` above)."""
+    return _POLICY_TICK_LABEL_SHORT.get(category, display_label(category, "policy"))
 
 
 def _style_for_category(category: str) -> dict:
@@ -282,7 +319,7 @@ def _label_dx_pt(style: dict) -> float:
 
 def _draw_dot_panel(
     ax, panel_df: pd.DataFrame, x_col: str, label_col: str, label_fmt: str,
-    category_order: list[str], xlim: tuple[float, float] | None,
+    category_order: list[str], xlim: tuple[float, float] | None, show_category_labels: bool = True,
 ) -> None:
     """Horizontal dot plot for one (panel, metric) cell: one row per policy
     category (fixed y order, see `_category_order`), connected by a thin
@@ -315,7 +352,7 @@ def _draw_dot_panel(
         x = float(by_x.get(category, float("nan")))
         style = _style_for_category(category)
         if not np.isfinite(x):
-            ax.text(0.02, y, "n/a", transform=ax.get_yaxis_transform(), va="center", ha="left", fontsize=5.2, color="#888888")
+            ax.text(0.02, y, "n/a", transform=ax.get_yaxis_transform(), va="center", ha="left", fontsize=ANNOTATION_FONT_PT, color="#888888")
             continue
         ax.scatter(
             [x], [y], s=style["size"], c=style["color"], marker=style["marker"],
@@ -323,14 +360,23 @@ def _draw_dot_panel(
         )
         label_value = float(by_label.get(category, float("nan")))
         label_text = label_fmt.format(label_value) if np.isfinite(label_value) else "n/a"
-        ax.annotate(label_text, (x, y), xytext=(_label_dx_pt(style), 0), textcoords="offset points", va="center", fontsize=5.2)
+        ax.annotate(label_text, (x, y), xytext=(_label_dx_pt(style), 0), textcoords="offset points", va="center", fontsize=ANNOTATION_FONT_PT)
 
     ax.set_yticks([y_positions[c] for c in category_order])
-    ax.set_yticklabels([display_label(c, "policy") for c in category_order], fontsize=5.6)
+    # 2026-09-19 proportions fix (author feedback: axes area too small):
+    # the category names (e.g. "alpha=2 (K.-Kawai)") are IDENTICAL across
+    # both metric columns of a row - repeating them as a full y-tick-label
+    # column in the right ("stress") panel too used to reserve a second,
+    # redundant left margin exactly as wide as the left ("neighbors kept")
+    # panel's, taking real plot area away from every right-column axes for
+    # no new information (the shared category ORDER is still visible via
+    # row alignment with the left column).
+    ax.set_yticklabels([_short_policy_tick_label(c) for c in category_order] if show_category_labels else [], fontsize=LABEL_FONT_PT)
+    ax.tick_params(axis="y", length=0 if not show_category_labels else 3.5)
     ax.set_ylim(-0.7, n_cat - 0.3)
     if xlim is not None:
         ax.set_xlim(*xlim)
-    ax.tick_params(axis="x", labelsize=5.6)
+    ax.tick_params(axis="x", labelsize=ANNOTATION_FONT_PT)
     for spine in ("top", "right"):
         ax.spines[spine].set_visible(False)
 
@@ -367,7 +413,26 @@ def main() -> None:
     # axis instead of two independently-scaled ones.
     df = _add_stress_pct_column(df, _PANEL_ORDER, baseline_policy=policy_label(0.0))
 
-    fig, axes = plt.subplots(2, 2, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.85), squeeze=False)
+    # 2026-09-19 (font-size fix): switched from tight_layout() to
+    # constrained_layout - at LABEL_FONT_PT on the printed \textwidth
+    # (372pt), tight_layout's fixed-rect pass either overlapped the rotated
+    # row label with its own x=0 tick (small rect) or clipped the y-tick
+    # labels at the figure's left edge (bigger rect, since tight_layout's
+    # sizing pass warned this figure has axes it cannot size correctly).
+    # constrained_layout re-solves the whole layout from actual label/tick
+    # bounding boxes every draw, so it does not need a hand-tuned rect.
+    fig, axes = plt.subplots(
+        2, 2, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.62), squeeze=False,
+        constrained_layout=True,
+    )
+    fig.set_constrained_layout_pads(w_pad=0.04, h_pad=0.04, wspace=0.08, hspace=0.06)
+    # 2026-09-19 (font-size fix): the per-point value labels (e.g. "+44.1%")
+    # are ax.annotate(..., textcoords="offset points") text anchored to a
+    # DATA point, not a standard axis/tick artist - constrained_layout's
+    # bbox pass does not see them, so the rightmost one was clipped at the
+    # figure edge. Reserving a blank 8% right margin (rect) gives them
+    # somewhere to sit without widening the axes themselves.
+    fig.get_layout_engine().set(rect=(0, 0, 0.92, 1))
 
     # neighbors_kept: one SHARED (0, k) scale (a natural, physically bounded
     # axis - both regimes are directly comparable on it). stress: ONE
@@ -387,27 +452,48 @@ def main() -> None:
         n_datasets = int(panel_df["n_datasets"].max()) if not panel_df.empty and panel_df["n_datasets"].notna().any() else 0
         for col, (x_col, label_col, label_fmt, metric_label, xlim_by_panel) in enumerate(metric_columns):
             ax = axes[row][col]
-            _draw_dot_panel(ax, panel_df, x_col, label_col, label_fmt, category_order, xlim_by_panel[panel_name])
+            _draw_dot_panel(ax, panel_df, x_col, label_col, label_fmt, category_order, xlim_by_panel[panel_name], show_category_labels=(col == 0))
             if x_col == _METRIC_NEIGHBORS:
                 ax.axvline(k, color="#bbbbbb", linewidth=0.8, linestyle="--", zorder=1)
             elif x_col == _METRIC_STRESS_PCT:
                 ax.axvline(0.0, color="#bbbbbb", linewidth=0.8, linestyle="--", zorder=1)
             if row == 0:
-                ax.set_title(metric_label, fontsize=7)
+                ax.set_title(metric_label, fontsize=LABEL_FONT_PT)
             elif row == len(_PANEL_ORDER) - 1:
-                ax.set_xlabel(metric_label, fontsize=6.5)
+                ax.set_xlabel(metric_label, fontsize=LABEL_FONT_PT)
             if col == 0:
-                ax.set_ylabel(f"{display_label(panel_name, 'regime')}\n(n={n_datasets} datasets)", fontsize=6.5)
+                # 2026-09-19 proportions fix (author feedback: axes area too
+                # small -> figure height reduced to meet the main-text
+                # height cap -> the OLD long rotated 2-line row label
+                # ("Low rho_NN: tuning helps\n(n=27 datasets)") no longer
+                # fit its own row height and visually overlapped the row
+                # below; de-rotating it (as in fig_graph_layouts.py, for
+                # the same failure mode) instead blew up the LEFT margin
+                # enough to squeeze the two columns' titles into each
+                # other). Shortened AND kept rotated: the full regime
+                # description ("tuning helps"/"does not help") and dataset
+                # count move to the caption (see the figure caption in
+                # 05_vysledky.tex) instead of being spelled out in-figure.
+                ax.set_ylabel(_SHORT_REGIME_LABEL[panel_name], fontsize=LABEL_FONT_PT)
 
     legend_handles = [
         Line2D([0], [0], marker=_STYLE_FIXED["marker"], color="none", markerfacecolor=_STYLE_FIXED["color"], markersize=5, label=r"fixed $\alpha$ (0/1/2/...)"),
         Line2D([0], [0], marker=_STYLE_PRED["marker"], color="none", markerfacecolor=_STYLE_PRED["color"], markeredgecolor="black", markersize=6, label=display_label(POLICY_LABEL_PRED, "policy")),
         Line2D([0], [0], marker=_STYLE_BEST["marker"], color="none", markerfacecolor=_STYLE_BEST["color"], markeredgecolor="black", markersize=9, label=display_label(POLICY_LABEL_BEST, "policy")),
     ]
-    fig.legend(handles=legend_handles, loc="lower center", ncol=3, fontsize=6, frameon=False, bbox_to_anchor=(0.5, 0.0))
+    # 2026-09-19 (font-size fix): "outside lower center" (matplotlib >=3.7)
+    # instead of a hand-placed bbox_to_anchor - the layout engine
+    # (constrained_layout, see above) then reserves real space for the
+    # legend instead of it floating over/under the axes.
+    fig.legend(handles=legend_handles, loc="outside lower center", ncol=3, fontsize=LABEL_FONT_PT, frameon=False)
 
-    fig.suptitle("Neighbor survival vs. metric cost, by alpha-selection policy and distance-concentration regime", fontsize=8, y=0.985)
-    fig.tight_layout(rect=(0, 0.06, 1, 0.94))
+    # 2026-09-19 proportions fix (author feedback, "useknuty text": the
+    # original ~97-char suptitle at LABEL_FONT_PT+1=9pt did not fit one
+    # line on the printed \textwidth (372pt, budget ~75 chars at ~0.55
+    # em/char) and was silently clipped by the canvas edge ("Neighbor..."
+    # printed as "...bor..."), shortened to fit (meaning unchanged: still
+    # names both the metric trade-off and the two conditioning variables).
+    fig.suptitle("Neighbor survival vs. metric cost, by alpha policy and regime", fontsize=LABEL_FONT_PT + 1)
 
     save_figure(fig, FIG_NAME)
     save_csv_alongside(df, FIG_NAME)

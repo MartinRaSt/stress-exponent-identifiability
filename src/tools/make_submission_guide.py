@@ -250,6 +250,9 @@ def _latex_math_to_plain(text: str) -> str:
     # siunitx \num{...} left over from macro expansion (e.g. \pooledAuc...
     # expands to "\num{0.0280}") -> bare number.
     text = re.sub(r"\\num\{([^{}]*)\}", r"\1", text)
+    # \href{url}{label} -> the label alone: the form takes plain text, and
+    # the ORCID note prints the identifier as its own label anyway.
+    text = re.sub(r"\\href\{[^{}]*\}\{([^{}]*)\}", r"\1", text)
     # \url{...} and \texttt{...} carry no typesetting meaning in plain text.
     text = re.sub(r"\\url\{([^{}]*)\}", r"\1", text)
     text = re.sub(r"\\texttt\{([^{}]*)\}", r"\1", text)
@@ -514,6 +517,20 @@ def build_form_texts_markdown(
         _extract_subsection(tex, "Code availability"), macros,
         "Code availability", warnings,
     )
+    # Springer asks for these three in the form even when they do not apply;
+    # leaving them out is a common reason for a submission to come back.
+    ethics_approval = _plain(
+        _extract_subsection(tex, "Ethics approval"), macros,
+        "Ethics approval", warnings,
+    )
+    consent_participate = _plain(
+        _extract_subsection(tex, "Consent to participate"), macros,
+        "Consent to participate", warnings,
+    )
+    consent_publication = _plain(
+        _extract_subsection(tex, "Consent for publication"), macros,
+        "Consent for publication", warnings,
+    )
     author_contributions_raw = _extract_subsection(tex, "Author contributions")
     author_contributions_raw = re.sub(
         r"\\textbf\{([^{}]*)\}", r"\1", author_contributions_raw
@@ -571,7 +588,7 @@ def build_form_texts_markdown(
 
     lines.append("## Autori")
     lines.append(
-        f"*(zdroj: `\\author`/`\\email`/`\\equalcont` a ORCID komentare v "
+        f"*(zdroj: `\\author`/`\\email`/`\\equalcont` v "
         f"{main_tex_path.name})*"
     )
     lines.append("")
@@ -580,7 +597,13 @@ def build_form_texts_markdown(
         lines.append(f"### {i}. {author.full_name}{role}")
         lines.append(f"- Email: {author.email}")
         lines.append(f"- ORCID: {author.orcid}")
-        lines.append(f"- Poznamka: {author.equal_contribution_note}")
+        # The note carries the ORCIDs as typeset LaTeX; the form takes
+        # plain text only.
+        note = _plain(
+            author.equal_contribution_note, macros,
+            f"Poznamka autora {i}", warnings,
+        )
+        lines.append(f"- Poznamka: {note}")
         lines.append("")
 
     lines.append("## Afiliace")
@@ -612,6 +635,15 @@ def build_form_texts_markdown(
     lines.append("")
     lines.append("### Code availability")
     lines.append(code_availability)
+    lines.append("")
+    lines.append("### Ethics approval")
+    lines.append(ethics_approval)
+    lines.append("")
+    lines.append("### Consent to participate")
+    lines.append(consent_participate)
+    lines.append("")
+    lines.append("### Consent for publication")
+    lines.append(consent_publication)
     lines.append("")
     lines.append("### Author contributions")
     lines.append(author_contributions)
@@ -786,9 +818,9 @@ def build_cover_letter_markdown(
     )
     lines.append("")
     lines.append(
-        "A statement on the use of AI-assisted tools during the preparation "
-        "of this manuscript accompanies this submission (see "
-        "dami_submission/03_PROHLASENI_O_AI.md)."
+        "The use of AI-assisted tools during the preparation of this "
+        "manuscript is declared in the manuscript itself, in the Methods "
+        "section and in full under Statements and Declarations."
     )
     lines.append("")
     lines.append(

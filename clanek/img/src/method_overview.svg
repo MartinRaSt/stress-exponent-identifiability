@@ -1,348 +1,398 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Project: Sammon mapping revisited (alpha-Sammon, scalable solver, temporal extension)
-  Author: Martin Radvansky, VSB - Technical University of Ostrava
-  Contact: martinradvansky@gmail.com
+  Project: Sammon mapping revisited - adaptive weighting, a scalable solver
+           and a temporal extension (alpha-Sammon)
+  Authors: Martin Radvansky <martin.radvansky@vsb.cz>
+           Martin Radvansky, Jr. <martin.radvansky1@vsb.cz>
+  Affiliation: Department of Computer Science, Faculty of Electrical Engineering
+               and Computer Science, VSB - Technical University of Ostrava,
+               17. listopadu 2172/15, 708 00 Ostrava-Poruba, Czech Republic
   Created: 2026-09-09
-  License: for research use within the project; see projectstate.md
+  License: see the LICENSE file in the repository root
 
-  Figure: method_overview (graphical abstract / conceptual scheme of the method,
-          item (j) in reserse/2026-09-09_specifikace_metody.md, section 14).
-  Content: 4 blocks read left to right: Input -> alpha-Sammon stress -> Solvers -> Output.
-  Units:   1 user unit = 1 mm (viewBox 0 0 190 95, page 190 mm x 95 mm, aspect 2:1).
-  Fonts:   DejaVu Sans (covers Greek letters and math symbols). Body text 2.5 mm = 7.1 pt,
-           equations 2.6-2.7 mm, headers 3.2 mm = 9.1 pt, sub/superscripts 2.1 mm (6 pt).
+  Figure: method_overview - conceptual scheme of the METHOD pipeline
+          (input distances, weighted stress, solver, output). Distinct from
+          study_design.svg (how the conclusions were reached) and
+          graphical_abstract.svg (the one-sentence takeaway).
+
+  ============================ REDRAW 2026-09-19 ============================
+  Reason: the previous version was authored on a 190mm x 95mm page with a
+  2.5-unit body font, but the article inserts the PDF with
+  \includegraphics[width=\textwidth] and \textwidth = 372pt = 131.23mm
+  (sn-jnl, measured by a pdflatex probe, config figures.layout.dami_full_width_pt
+  in src/common/config.yaml). The printed body text therefore came out at
+  ~4.9pt and the smallest sub/superscripts at ~3.9pt, far below the Springer
+  Nature artwork floor of ~8pt. Scaling the old drawing up was tried and
+  failed (elements started to collide): the four-columns-in-one-row layout is
+  simply too dense at this width, so the figure is REDRAWN, not rescaled.
+
+  What changed in the LAYOUT (the CONTENT is unchanged except for the items
+  explicitly moved to the caption, listed below):
+    * four side-by-side columns became four stacked full-width rows (same
+      visual language as study_design.svg: coloured header bar + tinted body
+      + one centred flow arrow between consecutive rows);
+    * the horizontal alpha axis with three ticks (its tick labels alone
+      needed ~110 units of width) became a compact three-row list of the
+      same three special cases, with a vertical arrow carrying the same
+      "global emphasis to local emphasis" reading;
+    * the two mutually exclusive ways of setting alpha are now two boxes
+      side by side behind a "Two ways to set alpha:" lead-in, joined by "or"
+      (previously stacked vertically);
+    * every label was shortened to the shortest unambiguous wording.
+  Moved from the drawing to the figure CAPTION (would not fit at 8pt):
+    - the notation legend (D_ij, d_ij, w_ij, Y in R^(n x p), p in {2,3});
+    - "sums over unordered pairs {i, j}" under the stress equation;
+    - the Guttman step formula Y := V^+ B(Y) Y;
+    - "(co-ranking criterion)" and "piecewise-constant rule" next to the two
+      alpha-selection routes;
+    - "m_i = 1 if node i persists" under the temporal stress.
+
+  Units:   viewBox 0 0 190 163; the physical page is 131.23mm x 112.58mm,
+           i.e. 1 user unit = 131.23/190 = 0.690684 mm on the printed page
+           (same convention as study_design.svg). The figure is inserted at
+           width=\textwidth, so the PDF is placed at scale 1.
+  Fonts:   DejaVu Sans (covers the Greek letters and math symbols used here).
+           font-size is given in user units; printed pt = user units *
+           372/190 = user units * 1.95789 (src/figures/check_font_sizes.py
+           derives the same factor from the viewBox, because svglib emits the
+           "Tf" operator in viewBox units):
+             title (bold)            5.31 units = 10.40 pt
+             row header (bold)       4.60 units =  9.01 pt
+             body / labels           4.29 units =  8.40 pt
+             sub- and superscripts   4.20 units =  8.22 pt
+           NOTHING in this figure prints below 8 pt: the usual "subscripts
+           may be smaller" exception is deliberately NOT used (author
+           requirement, 2026-09-19). Subscripts are only marginally smaller
+           than the body text and are distinguished by their baseline shift
+           (dy) rather than by size.
   Colours: Okabe-Ito colour-blind safe palette
-           blue #0072B2, vermillion #D55E00, bluish green #009E73, reddish purple #CC79A7,
-           orange #E69F00, sky blue #56B4E9; text #222222 / #555555.
+           row 1 Input   - blue           #0072B2 head / #E5EFF7 body
+           row 2 Stress  - vermillion     #D55E00 head / #FBEBE0 body
+           row 3 Solver  - bluish green   #009E73 head / #E0F4EE body
+           row 4 Output  - reddish purple #CC79A7 head / #F9EDF4 body
+           the cluster and trajectory icons also use orange #E69F00 and sky
+           blue #56B4E9; connectors and dividers are neutral grey and are
+           never used for text. All text is #1A1A1A or white on colour.
   Layers:  each top-level <g> is an Inkscape layer (inkscape:groupmode="layer").
-  Build:   make_method_overview.bat (svglib + reportlab via clanek/img/src/svg2pdf.py).
-  Note:    all coordinates are hand-placed schematic icons, no experimental data.
-  Provenance of every symbol / name: method_overview_provenance.md.
-  Updated: 2026-09-18, reviewer fixes vs. clanek/sections/03_metoda.tex --
-           (1) added alpha_pred = g(rho_NN) as an alternative, no-run route
-               next to grid-search (subsec:alpha_pred / subsec:alpha_selection);
-           (2) removed "multi-scale mixture" (negative result, supplement S3,
-               not part of the main-text method);
-           (3) weight formula unified with eq:weights: w_ij = (D_ij + eps_D)^-alpha.
-  Updated: 2026-09-18, fixed missing "<" glyph bug in st_eq_note: svglib/
-           reportlab silently dropped the "<" character from the embedded
-           PDF font (reproducible bug in the svg2pdf.py pipeline; reordering
-           and separate-tspan workarounds did not help). Reworded "sums over
-           pairs i < j" to "sums over unordered pairs {i, j}" (same meaning,
-           no reliance on the "<" glyph); see comment at st_eq_note.
+  Build:   make_method_overview.bat (svglib + reportlab via
+           clanek/img/src/svg2pdf.py; Inkscape is not on PATH on this machine).
+  svglib limitations honoured here (see study_design_provenance.md):
+    (a) text-anchor="middle"/"end" is applied to every <tspan> separately, so
+        every text that CONTAINS a <tspan> is anchored "start" at an x
+        computed exactly with reportlab pdfmetrics.stringWidth (the value is
+        justified in a comment next to each such line); only single-run texts
+        use "middle"/"end";
+    (b) the character "&lt;" is silently dropped from the embedded subset font
+        by reportlab in this document, so it is not used anywhere in the
+        rendered text (the Guttman step, which would need an arrow, lives in
+        the caption instead).
+  Note:    all boxes, icons, dots and trajectories are hand-placed schematic
+           shapes - NO experimental data is plotted. The provenance of every
+           name, symbol and value is in method_overview_provenance.md.
 -->
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-     width="190mm" height="95mm" viewBox="0 0 190 95"
-     font-family="DejaVu Sans" font-size="2.5" fill="#222222">
+     width="131.23mm" height="112.58mm" viewBox="0 0 190 163"
+     font-family="DejaVu Sans" font-size="4.29" fill="#1A1A1A">
 
   <!-- ======================= background ======================= -->
   <g id="layer_background" inkscape:label="00 background" inkscape:groupmode="layer">
-    <rect id="page" x="0" y="0" width="190" height="95" fill="#FFFFFF"/>
+    <rect id="page" x="0" y="0" width="190" height="163" fill="#FFFFFF"/>
   </g>
 
-  <!-- ======================= block frames ======================= -->
-  <!-- Each block: rounded header bar (solid colour) + tinted body. Top y = 3, header bottom y = 10, body bottom y = 92. -->
-  <g id="layer_frames" inkscape:label="01 block frames" inkscape:groupmode="layer">
-    <!-- block 1: Input (x 2.5 .. 38.5) -->
-    <path id="frame1_body" d="M 2.5,10 H 38.5 V 90.5 A 1.5,1.5 0 0 1 37,92 H 4 A 1.5,1.5 0 0 1 2.5,90.5 Z" fill="#E5EFF7"/>
-    <path id="frame1_head" d="M 4,3 H 37 A 1.5,1.5 0 0 1 38.5,4.5 V 10 H 2.5 V 4.5 A 1.5,1.5 0 0 1 4,3 Z" fill="#0072B2"/>
-    <!-- block 2: alpha-Sammon stress (x 42.5 .. 90.5) -->
-    <path id="frame2_body" d="M 42.5,10 H 90.5 V 90.5 A 1.5,1.5 0 0 1 89,92 H 44 A 1.5,1.5 0 0 1 42.5,90.5 Z" fill="#FBEBE0"/>
-    <path id="frame2_head" d="M 44,3 H 89 A 1.5,1.5 0 0 1 90.5,4.5 V 10 H 42.5 V 4.5 A 1.5,1.5 0 0 1 44,3 Z" fill="#D55E00"/>
-    <!-- block 3: Solvers (x 94.5 .. 140.5) -->
-    <path id="frame3_body" d="M 94.5,10 H 140.5 V 90.5 A 1.5,1.5 0 0 1 139,92 H 96 A 1.5,1.5 0 0 1 94.5,90.5 Z" fill="#E0F4EE"/>
-    <path id="frame3_head" d="M 96,3 H 139 A 1.5,1.5 0 0 1 140.5,4.5 V 10 H 94.5 V 4.5 A 1.5,1.5 0 0 1 96,3 Z" fill="#009E73"/>
-    <!-- block 4: Output (x 144.5 .. 187.5) -->
-    <path id="frame4_body" d="M 144.5,10 H 187.5 V 90.5 A 1.5,1.5 0 0 1 186,92 H 146 A 1.5,1.5 0 0 1 144.5,90.5 Z" fill="#F9EDF4"/>
-    <path id="frame4_head" d="M 146,3 H 186 A 1.5,1.5 0 0 1 187.5,4.5 V 10 H 144.5 V 4.5 A 1.5,1.5 0 0 1 146,3 Z" fill="#CC79A7"/>
+  <!-- ======================= title ======================= -->
+  <g id="layer_title" inkscape:label="01 title" inkscape:groupmode="layer">
+    <text id="title" x="95" y="5.6" text-anchor="middle" font-size="5.31" font-weight="bold">Method overview</text>
+    <line id="title_rule" x1="5" y1="7.6" x2="185" y2="7.6" stroke="#CCCCCC" stroke-width="0.25"/>
   </g>
 
-  <!-- ======================= block headers ======================= -->
-  <g id="layer_headers" inkscape:label="02 block headers" inkscape:groupmode="layer"
-     font-size="3.2" font-weight="bold" fill="#FFFFFF">
-    <text id="head1" x="5" y="7.9">1  Input</text>
-    <text id="head2" x="45" y="7.9">2  α-Sammon stress</text>
-    <text id="head3" x="97" y="7.9">3  Solvers</text>
-    <text id="head4" x="147" y="7.9">4  Output</text>
+  <!-- ======================= flow arrows between the four rows ======================= -->
+  <g id="layer_arrows" inkscape:label="02 flow arrows" inkscape:groupmode="layer" stroke="#757575" fill="#757575">
+    <line id="arrow12_line" x1="95" y1="34.0" x2="95" y2="36.2" stroke-width="0.45"/>
+    <polygon id="arrow12_head" points="93.7,36.2 96.3,36.2 95,37.5" stroke="none"/>
+    <line id="arrow23_line" x1="95" y1="81.0" x2="95" y2="83.2" stroke-width="0.45"/>
+    <polygon id="arrow23_head" points="93.7,83.2 96.3,83.2 95,84.5" stroke="none"/>
+    <line id="arrow34_line" x1="95" y1="118.5" x2="95" y2="120.7" stroke-width="0.45"/>
+    <polygon id="arrow34_head" points="93.7,120.7 96.3,120.7 95,122.0" stroke="none"/>
   </g>
 
-  <!-- ======================= flow arrows between blocks ======================= -->
-  <g id="layer_arrows" inkscape:label="03 flow arrows" inkscape:groupmode="layer" fill="#555555">
-    <polygon id="arrow12" points="39.2,45.0 42.0,47.5 39.2,50.0"/>
-    <polygon id="arrow23" points="91.2,45.0 94.0,47.5 91.2,50.0"/>
-    <polygon id="arrow34" points="141.2,45.0 144.0,47.5 141.2,50.0"/>
+  <!-- ======================= row 1: Input ======================= -->
+  <!-- header bar y 10.0..16.0, tinted body y 16.0..34.0; three cells at
+       x 7 / 67 / 127, each an 11-unit icon followed by its label block -->
+  <g id="layer_row1_frame" inkscape:label="10 row1 frame" inkscape:groupmode="layer">
+    <path id="row1_head" d="M 6.5,10.0 H 183.5 A 1.5,1.5 0 0 1 185,11.5 V 16.0 H 5 V 11.5 A 1.5,1.5 0 0 1 6.5,10.0 Z" fill="#0072B2"/>
+    <path id="row1_body" d="M 5,16.0 H 185 V 32.5 A 1.5,1.5 0 0 1 183.5,34.0 H 6.5 A 1.5,1.5 0 0 1 5,32.5 Z" fill="#E5EFF7"/>
   </g>
+  <g id="layer_row1_text" inkscape:label="11 row1 text" inkscape:groupmode="layer">
+    <text id="row1_head_text" x="95" y="14.2" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">1  Input — distance matrix D</text>
 
-  <!-- ======================= block 1: Input ======================= -->
-  <g id="layer_input" inkscape:label="10 block 1 Input" inkscape:groupmode="layer">
-    <text id="in_subtitle" x="20.5" y="14.8" text-anchor="middle" fill="#555555">distance matrix D</text>
-
-    <!-- row A: vector data -> Euclidean distance matrix (icon: symmetric matrix, zero diagonal, shade = |i-j| band) -->
+    <!-- cell A: vector data, Euclidean distance matrix (icon: symmetric
+         matrix with a zero diagonal, shade = band distance |i-j|) -->
     <g id="in_matrix_icon">
-      <rect x="5.0" y="18.5" width="1.8" height="1.8" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="6.8" y="18.5" width="1.8" height="1.8" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="8.6" y="18.5" width="1.8" height="1.8" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="10.4" y="18.5" width="1.8" height="1.8" fill="#4A94CC" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="12.2" y="18.5" width="1.8" height="1.8" fill="#0072B2" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="5.0" y="20.3" width="1.8" height="1.8" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="6.8" y="20.3" width="1.8" height="1.8" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="8.6" y="20.3" width="1.8" height="1.8" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="10.4" y="20.3" width="1.8" height="1.8" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="12.2" y="20.3" width="1.8" height="1.8" fill="#4A94CC" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="5.0" y="22.1" width="1.8" height="1.8" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="6.8" y="22.1" width="1.8" height="1.8" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="8.6" y="22.1" width="1.8" height="1.8" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="10.4" y="22.1" width="1.8" height="1.8" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="12.2" y="22.1" width="1.8" height="1.8" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="5.0" y="23.9" width="1.8" height="1.8" fill="#4A94CC" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="6.8" y="23.9" width="1.8" height="1.8" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="8.6" y="23.9" width="1.8" height="1.8" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="10.4" y="23.9" width="1.8" height="1.8" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="12.2" y="23.9" width="1.8" height="1.8" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="5.0" y="25.7" width="1.8" height="1.8" fill="#0072B2" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="6.8" y="25.7" width="1.8" height="1.8" fill="#4A94CC" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="8.6" y="25.7" width="1.8" height="1.8" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="10.4" y="25.7" width="1.8" height="1.8" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="12.2" y="25.7" width="1.8" height="1.8" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
-      <rect x="5.0" y="18.5" width="9" height="9" fill="none" stroke="#0072B2" stroke-width="0.3"/>
+      <rect x="7.0" y="19.5" width="2.2" height="2.2" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="9.2" y="19.5" width="2.2" height="2.2" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="11.4" y="19.5" width="2.2" height="2.2" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="13.6" y="19.5" width="2.2" height="2.2" fill="#4A94CC" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="15.8" y="19.5" width="2.2" height="2.2" fill="#0072B2" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="7.0" y="21.7" width="2.2" height="2.2" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="9.2" y="21.7" width="2.2" height="2.2" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="11.4" y="21.7" width="2.2" height="2.2" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="13.6" y="21.7" width="2.2" height="2.2" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="15.8" y="21.7" width="2.2" height="2.2" fill="#4A94CC" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="7.0" y="23.9" width="2.2" height="2.2" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="9.2" y="23.9" width="2.2" height="2.2" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="11.4" y="23.9" width="2.2" height="2.2" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="13.6" y="23.9" width="2.2" height="2.2" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="15.8" y="23.9" width="2.2" height="2.2" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="7.0" y="26.1" width="2.2" height="2.2" fill="#4A94CC" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="9.2" y="26.1" width="2.2" height="2.2" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="11.4" y="26.1" width="2.2" height="2.2" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="13.6" y="26.1" width="2.2" height="2.2" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="15.8" y="26.1" width="2.2" height="2.2" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="7.0" y="28.3" width="2.2" height="2.2" fill="#0072B2" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="9.2" y="28.3" width="2.2" height="2.2" fill="#4A94CC" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="11.4" y="28.3" width="2.2" height="2.2" fill="#7FB3DA" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="13.6" y="28.3" width="2.2" height="2.2" fill="#B3D1E8" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="15.8" y="28.3" width="2.2" height="2.2" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="0.15"/>
+      <rect x="7.0" y="19.5" width="11" height="11" fill="none" stroke="#0072B2" stroke-width="0.3"/>
     </g>
-    <g id="in_row_vectors">
-      <text x="16.5" y="21.0" font-weight="bold">Vectors</text>
-      <text x="16.5" y="24.4">Euclidean</text>
-      <text x="16.5" y="27.8">distance</text>
+    <g id="in_cell_vectors">
+      <text x="20.5" y="23.4" font-weight="bold">Vectors</text>
+      <text x="20.5" y="28.4">Euclidean distance</text>
     </g>
 
-    <!-- row B: graphs -> shortest-path / resistance distance (icon: small undirected graph) -->
-    <g id="in_graph_icon" stroke="#555555" stroke-width="0.3">
-      <line x1="6.0" y1="33.0" x2="12.5" y2="32.8"/>
-      <line x1="6.0" y1="33.0" x2="9.3" y2="36.2"/>
-      <line x1="12.5" y1="32.8" x2="9.3" y2="36.2"/>
-      <line x1="9.3" y1="36.2" x2="5.8" y2="39.6"/>
-      <line x1="9.3" y1="36.2" x2="13.0" y2="39.6"/>
-      <line x1="5.8" y1="39.6" x2="9.5" y2="40.8"/>
-      <line x1="13.0" y1="39.6" x2="9.5" y2="40.8"/>
-      <line x1="6.0" y1="33.0" x2="5.8" y2="39.6"/>
+    <!-- cell B: graphs, shortest-path or resistance distance (icon: small
+         undirected graph) -->
+    <g id="in_graph_icon" stroke="#757575" stroke-width="0.35">
+      <line x1="68.3" y1="21.0" x2="75.8" y2="20.6"/>
+      <line x1="68.3" y1="21.0" x2="72.0" y2="24.5"/>
+      <line x1="75.8" y1="20.6" x2="72.0" y2="24.5"/>
+      <line x1="72.0" y1="24.5" x2="68.0" y2="28.0"/>
+      <line x1="72.0" y1="24.5" x2="76.5" y2="27.5"/>
+      <line x1="68.0" y1="28.0" x2="72.6" y2="30.2"/>
+      <line x1="76.5" y1="27.5" x2="72.6" y2="30.2"/>
+      <line x1="68.3" y1="21.0" x2="68.0" y2="28.0"/>
       <g fill="#0072B2" stroke="none">
-        <circle cx="6.0" cy="33.0" r="0.9"/>
-        <circle cx="12.5" cy="32.8" r="0.9"/>
-        <circle cx="9.3" cy="36.2" r="0.9"/>
-        <circle cx="5.8" cy="39.6" r="0.9"/>
-        <circle cx="13.0" cy="39.6" r="0.9"/>
-        <circle cx="9.5" cy="40.8" r="0.9"/>
+        <circle cx="68.3" cy="21.0" r="1.0"/>
+        <circle cx="75.8" cy="20.6" r="1.0"/>
+        <circle cx="72.0" cy="24.5" r="1.0"/>
+        <circle cx="68.0" cy="28.0" r="1.0"/>
+        <circle cx="76.5" cy="27.5" r="1.0"/>
+        <circle cx="72.6" cy="30.2" r="1.0"/>
       </g>
     </g>
-    <g id="in_row_graphs">
-      <text x="16.5" y="34.2" font-weight="bold">Graphs</text>
-      <text x="16.5" y="37.6">shortest-path /</text>
-      <text x="16.5" y="41.0">resistance dist.</text>
+    <g id="in_cell_graphs">
+      <text x="80.5" y="20.9" font-weight="bold">Graphs</text>
+      <text x="80.5" y="25.9">shortest-path or</text>
+      <text x="80.5" y="30.9">resistance distance</text>
     </g>
 
-    <!-- row C: sequence of frames D_1 .. D_T (icon: three small matrices on a time arrow) -->
+    <!-- cell C: sequences, one distance matrix per frame (icon: three
+         matrices on a time arrow) -->
     <g id="in_sequence_icon">
-      <rect x="5.2" y="47.6" width="2.4" height="2.4" fill="#B3D1E8" stroke="#0072B2" stroke-width="0.25"/>
-      <rect x="8.6" y="47.6" width="2.4" height="2.4" fill="#7FB3DA" stroke="#0072B2" stroke-width="0.25"/>
-      <rect x="12.0" y="47.6" width="2.4" height="2.4" fill="#0072B2" stroke="#0072B2" stroke-width="0.25"/>
-      <line x1="5.0" y1="52.6" x2="14.0" y2="52.6" stroke="#555555" stroke-width="0.3"/>
-      <polygon points="13.6,51.7 15.2,52.6 13.6,53.5" fill="#555555"/>
-      <text x="9.7" y="56.4" text-anchor="middle" fill="#555555">t</text>
+      <rect x="127.0" y="21.0" width="3.2" height="3.2" fill="#B3D1E8" stroke="#0072B2" stroke-width="0.3"/>
+      <rect x="131.2" y="21.0" width="3.2" height="3.2" fill="#7FB3DA" stroke="#0072B2" stroke-width="0.3"/>
+      <rect x="135.4" y="21.0" width="3.2" height="3.2" fill="#0072B2" stroke="#0072B2" stroke-width="0.3"/>
+      <line x1="127.0" y1="26.5" x2="136.8" y2="26.5" stroke="#757575" stroke-width="0.35"/>
+      <polygon points="136.4,25.6 138.2,26.5 136.4,27.4" fill="#757575"/>
+      <text x="132.6" y="31.4" text-anchor="middle" font-style="italic">t</text>
     </g>
-    <g id="in_row_sequences">
-      <text x="16.5" y="47.8" font-weight="bold">Sequences</text>
-      <text x="16.5" y="51.2">frames</text>
-      <text x="16.5" y="54.6">D<tspan font-size="2.1" dy="0.8">1</tspan><tspan dy="-0.8">, …, D</tspan><tspan font-size="2.1" dy="0.8">T</tspan></text>
-    </g>
-
-    <!-- notation legend shared by blocks 2 and 4 -->
-    <line id="in_separator" x1="5" y1="61" x2="36" y2="61" stroke="#0072B2" stroke-width="0.3"/>
-    <g id="in_notation">
-      <text x="5" y="65.6" font-weight="bold">Notation</text>
-      <text x="5" y="70.0">D<tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8">  input distance</tspan></text>
-      <text x="5" y="74.4">d<tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8">  embedded distance</tspan></text>
-      <text x="5" y="78.8">w<tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8">  pair weight</tspan></text>
-      <text x="5" y="83.2">Y  layout, n × p</text>
-      <text x="5" y="87.6">p ∈ {2, 3}</text>
+    <g id="in_cell_sequences">
+      <text x="140.5" y="20.9" font-weight="bold">Sequences</text>
+      <text x="140.5" y="25.9">one matrix</text>
+      <text x="140.5" y="30.9">per frame</text>
     </g>
   </g>
 
-  <!-- ======================= block 2: alpha-Sammon stress ======================= -->
-  <g id="layer_stress" inkscape:label="20 block 2 alpha-Sammon stress" inkscape:groupmode="layer">
-    <!-- normalized stress E_alpha(Y) = sum w_ij (D_ij - d_ij)^2 / sum w_ij D_ij^2 (spec section 1.1) -->
-    <g id="st_equation" font-size="2.7">
-      <text id="st_eq_lhs" x="45.5" y="19.7">E<tspan font-size="2.1" dy="0.8">α</tspan><tspan dy="-0.8">(Y) =</tspan></text>
-      <text id="st_eq_num" x="60.5" y="17.4">Σ w<tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8"> (D</tspan><tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8"> − d</tspan><tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8">)²</tspan></text>
-      <line id="st_eq_bar" x1="59.5" y1="18.8" x2="87.5" y2="18.8" stroke="#222222" stroke-width="0.3"/>
-      <text id="st_eq_den" x="66.0" y="22.6">Σ w<tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8"> D</tspan><tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8">²</tspan></text>
-    </g>
-    <!-- NOTE: wording avoids a literal "<" character on purpose. The reportlab/
-         svglib TTFont subsetting pipeline used by svg2pdf.py has a reproducible
-         bug (verified empirically, 2026-09-18: isolated single-character reorder
-         and own-tspan workarounds were tried and still silently dropped the "<"
-         glyph from the embedded PDF font in this multi-block document) that
-         drops the "<" glyph from the rendered PDF. Rewording to "unordered
-         pairs {i, j}" keeps the same mathematical meaning (each pair counted
-         once, i != j) without relying on that glyph. -->
-    <text id="st_eq_note" x="45.5" y="27.0" fill="#555555">sums over unordered pairs {i, j}</text>
-    <!-- weight family w_ij = (D_ij + eps_D)^(-alpha), matches eq:weights in 03_metoda.tex -->
-    <text id="st_weight" x="45.5" y="32.6" font-size="2.7">w<tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8"> = (D</tspan><tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8"> + ε</tspan><tspan font-size="2.1" dy="0.8">D</tspan><tspan dy="-0.8">)</tspan><tspan font-size="2.1" dy="-2.0">−α</tspan><tspan dy="2.0">  (α ≥ 0)</tspan></text>
+  <!-- ======================= row 2: weighted stress ======================= -->
+  <!-- header bar y 37.5..43.5, tinted body y 43.5..81.0; left half = the
+       stress and the weight family, right half = the three special cases,
+       bottom strip = the two ways of setting alpha -->
+  <g id="layer_row2_frame" inkscape:label="20 row2 frame" inkscape:groupmode="layer">
+    <path id="row2_head" d="M 6.5,37.5 H 183.5 A 1.5,1.5 0 0 1 185,39.0 V 43.5 H 5 V 39.0 A 1.5,1.5 0 0 1 6.5,37.5 Z" fill="#D55E00"/>
+    <path id="row2_body" d="M 5,43.5 H 185 V 79.5 A 1.5,1.5 0 0 1 183.5,81.0 H 6.5 A 1.5,1.5 0 0 1 5,79.5 Z" fill="#FBEBE0"/>
+    <line id="row2_divider" x1="92" y1="46.5" x2="92" y2="65.5" stroke="#CCCCCC" stroke-width="0.3" stroke-dasharray="1.6,1.4"/>
+  </g>
+  <g id="layer_row2_text" inkscape:label="21 row2 text" inkscape:groupmode="layer">
+    <text id="row2_head_text" x="95" y="41.7" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">2  Weighted stress — exponent α</text>
 
-    <!-- alpha axis with the three classical special cases (spec section 1.1) -->
-    <g id="st_alpha_axis">
-      <text x="45.5" y="38.6" font-weight="bold">weight family</text>
-      <line x1="47.5" y1="46.5" x2="85.5" y2="46.5" stroke="#555555" stroke-width="0.3"/>
-      <polygon points="85.0,45.4 87.2,46.5 85.0,47.6" fill="#555555"/>
-      <text x="88.0" y="47.4" font-style="italic">α</text>
-      <!-- tick alpha = 0: metric MDS (Kruskal stress-1, squared) -->
-      <circle cx="51.0" cy="46.5" r="1.0" fill="#FFFFFF" stroke="#D55E00" stroke-width="0.3"/>
-      <text x="51.0" y="42.9" text-anchor="middle">α = 0</text>
-      <text x="51.0" y="51.4" text-anchor="middle">metric MDS</text>
-      <!-- tick alpha = 1: Sammon (1969), the classical method -->
-      <circle cx="65.0" cy="46.5" r="1.0" fill="#D55E00" stroke="#D55E00" stroke-width="0.3"/>
-      <text x="65.0" y="42.9" text-anchor="middle">α = 1</text>
-      <text x="65.0" y="55.2" text-anchor="middle" font-weight="bold" fill="#D55E00">Sammon (1969)</text>
-      <!-- tick alpha = 2: Kamada-Kawai weights -->
-      <circle cx="78.5" cy="46.5" r="1.0" fill="#FFFFFF" stroke="#D55E00" stroke-width="0.3"/>
-      <text x="78.5" y="42.9" text-anchor="middle">α = 2</text>
-      <text x="78.5" y="51.4" text-anchor="middle">Kamada–Kawai</text>
-      <!-- qualitative reading of the axis: larger alpha = larger weight on small distances -->
-      <text x="45.5" y="59.6" fill="#555555" font-style="italic">global emphasis</text>
-      <text x="88.0" y="59.6" fill="#555555" font-style="italic" text-anchor="end">local emphasis</text>
+    <!-- normalized stress E_alpha(Y) = sum w_ij (D_ij - d_ij)^2 / sum w_ij D_ij^2
+         (spec section 1.1). That the sums run over unordered pairs {i, j} is
+         stated in the figure caption (see the file header).
+         The fraction bar spans x 27.5..62.5 (35 units); the numerator (33.36
+         units wide by pdfmetrics) is centred on it at x = 27.5 + (35-33.36)/2
+         = 28.32, the denominator (18.64) at x = 27.5 + (35-18.64)/2 = 35.68.
+         Both are anchored "start" because they contain <tspan> subscripts. -->
+    <g id="st_equation">
+      <text id="st_eq_lhs" x="8" y="52.4">E<tspan font-size="4.20" dy="1.3">α</tspan><tspan dy="-1.3">(Y)  =</tspan></text>
+      <text id="st_eq_num" x="28.32" y="49.1">Σ w<tspan font-size="4.20" dy="1.3">ij</tspan><tspan dy="-1.3"> (D</tspan><tspan font-size="4.20" dy="1.3">ij</tspan><tspan dy="-1.3"> − d</tspan><tspan font-size="4.20" dy="1.3">ij</tspan><tspan dy="-1.3">)²</tspan></text>
+      <line id="st_eq_bar" x1="27.5" y1="51.0" x2="62.5" y2="51.0" stroke="#1A1A1A" stroke-width="0.35"/>
+      <text id="st_eq_den" x="35.68" y="55.6">Σ w<tspan font-size="4.20" dy="1.3">ij</tspan><tspan dy="-1.3"> D</tspan><tspan font-size="4.20" dy="1.3">ij</tspan><tspan dy="-1.3">²</tspan></text>
+    </g>
+    <!-- weight family w_ij = (D_ij + eps_D)^(-alpha); matches eq:weights in
+         03_metoda.tex. The formula is 39.31 units wide from x=8, so the side
+         condition alpha >= 0 starts at x=56. -->
+    <text id="st_weight" x="8" y="63.5">w<tspan font-size="4.20" dy="1.3">ij</tspan><tspan dy="-1.3"> = (D</tspan><tspan font-size="4.20" dy="1.3">ij</tspan><tspan dy="-1.3"> + ε</tspan><tspan font-size="4.20" dy="1.3">D</tspan><tspan dy="-1.3">)</tspan><tspan font-size="4.20" dy="-1.9">−α</tspan></text>
+    <text id="st_weight_cond" x="56" y="63.5">α ≥ 0</text>
+
+    <!-- the three classical special cases of the family (this replaces the
+         former horizontal alpha axis, whose tick labels alone needed ~110
+         units of width); the vertical arrow carries the same reading as the
+         old axis: small alpha emphasises global structure, large alpha the
+         local one. Label columns: alpha at x=101 (width 11.88), name at
+         x=115 (widest 38.28 -> ends at 153.3), emphasis right-anchored at
+         x=185 (widest 35.00 -> starts at 150.0, and the emphasis labels sit
+         on the alpha=0 and alpha=2 rows, whose names end at 139.9 and
+         147.5). -->
+    <g id="st_special_cases">
+      <line id="st_arrow_line" x1="97" y1="46.5" x2="97" y2="62.0" stroke="#757575" stroke-width="0.45"/>
+      <polygon id="st_arrow_head" points="95.7,62.0 98.3,62.0 97,63.6" fill="#757575"/>
+      <text id="st_case0_a" x="101" y="49.5">α = 0</text>
+      <text id="st_case0_n" x="115" y="49.5">metric MDS</text>
+      <text id="st_case0_e" x="185" y="49.5" text-anchor="end" font-style="italic">global emphasis</text>
+      <text id="st_case1_a" x="101" y="56.0">α = 1</text>
+      <text id="st_case1_n" x="115" y="56.0" font-weight="bold" fill="#D55E00">Sammon (1969)</text>
+      <text id="st_case2_a" x="101" y="62.5">α = 2</text>
+      <text id="st_case2_n" x="115" y="62.5">Kamada–Kawai</text>
+      <text id="st_case2_e" x="185" y="62.5" text-anchor="end" font-style="italic">local emphasis</text>
     </g>
 
-    <!-- alpha selection: two alternative, mutually exclusive routes (03_metoda.tex, subsec:alpha_selection) -->
-    <!-- route A: grid-search over alpha using the co-ranking AUC criterion (eq:auc_rnx) -->
-    <g id="st_note_gridsearch">
-      <rect x="45.5" y="63.0" width="42" height="12.0" rx="1.2" fill="#FFFFFF" stroke="#D55E00" stroke-width="0.3"/>
-      <text x="47.5" y="66.8" font-weight="bold">Grid-search</text>
-      <text x="47.5" y="70.2">chosen by R<tspan font-size="2.1" dy="0.8">NX</tspan><tspan dy="-0.8"> AUC</tspan></text>
-      <text x="47.5" y="73.6">(co-ranking criterion)</text>
-    </g>
-    <!-- "or": the two routes are alternatives, not steps of one pipeline -->
-    <g id="st_note_or" font-style="italic" fill="#555555">
-      <text x="66.5" y="76.6" text-anchor="middle" font-size="2.0">or</text>
-    </g>
-    <!-- route B: no-tuning rule alpha_pred = g(rho_NN), the paper's main practical contribution
-         (03_metoda.tex, subsec:alpha_pred, eq:alpha_pred); needs only D, zero DR runs -->
-    <g id="st_note_alpha_pred">
-      <rect x="45.5" y="77.0" width="42" height="12.0" rx="1.2" fill="#FFFFFF" stroke="#D55E00" stroke-width="0.3"/>
-      <text x="47.5" y="80.8" font-weight="bold">α<tspan font-size="2.1" dy="0.8">pred</tspan><tspan dy="-0.8"> = g(ρ</tspan><tspan font-size="2.1" dy="0.8">NN</tspan><tspan dy="-0.8">)</tspan></text>
-      <text x="47.5" y="84.3">no run needed</text>
-      <text x="47.5" y="87.9" fill="#555555">piecewise-constant rule</text>
+    <!-- the two mutually exclusive routes to a value of alpha
+         (03_metoda.tex: subsec:alpha_selection vs. subsec:alpha_pred) -->
+    <g id="st_alpha_routes">
+      <text id="st_routes_label" x="5" y="74.3" font-weight="bold">Two ways to set α:</text>
+      <!-- route A: grid search, scored by the co-ranking AUC (eq:auc_rnx) -->
+      <rect id="st_route_a_box" x="53" y="66.5" width="63" height="12.5" rx="1.2" fill="#FFFFFF" stroke="#D55E00" stroke-width="0.35"/>
+      <text id="st_route_a_l1" x="55.5" y="71.5" font-weight="bold">Grid-search over α</text>
+      <text id="st_route_a_l2" x="55.5" y="76.5">largest R<tspan font-size="4.20" dy="1.3">NX</tspan><tspan dy="-1.3"> AUC</tspan></text>
+      <text id="st_routes_or" x="121" y="74.3" text-anchor="middle" font-style="italic">or</text>
+      <!-- route B: the tuning-free rule alpha_pred = g(rho_NN), eq:alpha_pred -->
+      <rect id="st_route_b_box" x="126" y="66.5" width="59" height="12.5" rx="1.2" fill="#FFFFFF" stroke="#D55E00" stroke-width="0.35"/>
+      <text id="st_route_b_l1" x="128.5" y="71.5" font-weight="bold">α<tspan font-size="4.20" dy="1.3">pred</tspan><tspan dy="-1.3"> = g(ρ</tspan><tspan font-size="4.20" dy="1.3">NN</tspan><tspan dy="-1.3">)</tspan></text>
+      <text id="st_route_b_l2" x="128.5" y="76.5">no extra embedding run</text>
     </g>
   </g>
 
-  <!-- ======================= block 3: Solvers ======================= -->
-  <g id="layer_solvers" inkscape:label="30 block 3 Solvers" inkscape:groupmode="layer">
-    <text id="so_subtitle" x="108.5" y="14.8" fill="#555555">minimize E<tspan font-size="2.1" dy="0.8">α</tspan><tspan dy="-0.8">(Y)</tspan></text>
+  <!-- ======================= row 3: solver ======================= -->
+  <!-- header bar y 84.5..90.5, tinted body y 90.5..118.5; three solver boxes
+       of 58 units at x 5 / 66 / 127, then the backend line -->
+  <g id="layer_row3_frame" inkscape:label="30 row3 frame" inkscape:groupmode="layer">
+    <path id="row3_head" d="M 6.5,84.5 H 183.5 A 1.5,1.5 0 0 1 185,86.0 V 90.5 H 5 V 86.0 A 1.5,1.5 0 0 1 6.5,84.5 Z" fill="#009E73"/>
+    <path id="row3_body" d="M 5,90.5 H 185 V 117.0 A 1.5,1.5 0 0 1 183.5,118.5 H 6.5 A 1.5,1.5 0 0 1 5,117.0 Z" fill="#E0F4EE"/>
+  </g>
+  <g id="layer_row3_text" inkscape:label="31 row3 text" inkscape:groupmode="layer">
+    <!-- the header contains a subscript, hence anchored "start": total width
+         69.20 units (pdfmetrics) centred on x=95 gives x = 95 - 34.60 = 60.40 -->
+    <text id="row3_head_text" x="60.40" y="88.7" font-size="4.60" font-weight="bold" fill="#FFFFFF">3  Solver — minimize E<tspan font-size="4.20" dy="1.3">α</tspan><tspan dy="-1.3">(Y)</tspan></text>
 
-    <!-- solver A: SMACOF majorization (spec section 2) -->
+    <!-- solver A: SMACOF majorization (spec section 2); the Guttman step
+         formula itself is given in the caption (see the file header) -->
     <g id="so_smacof">
-      <rect x="96.5" y="18.0" width="42" height="15.5" rx="1.2" fill="#FFFFFF" stroke="#009E73" stroke-width="0.3"/>
-      <text x="98.5" y="22.4" font-size="2.6" font-weight="bold">SMACOF majorization</text>
-      <text x="98.5" y="26.2">Y ← V<tspan font-size="2.1" dy="-1.0">+</tspan><tspan dy="1.0"> B(Y) Y  (Guttman step)</tspan></text>
-      <text x="98.5" y="30.0">monotone stress decrease</text>
+      <rect x="5" y="93.0" width="58" height="18.5" rx="1.2" fill="#FFFFFF" stroke="#009E73" stroke-width="0.35"/>
+      <text x="7.5" y="98.2" font-weight="bold">SMACOF majorization</text>
+      <text x="7.5" y="103.4">Guttman step</text>
+      <text x="7.5" y="108.6">monotone decrease</text>
     </g>
     <!-- solver B: stabilized SGD (spec section 3.3) -->
     <g id="so_sgd">
-      <rect x="96.5" y="36.0" width="42" height="15.5" rx="1.2" fill="#FFFFFF" stroke="#009E73" stroke-width="0.3"/>
-      <text x="98.5" y="40.4" font-size="2.6" font-weight="bold">Stabilized SGD</text>
-      <text x="98.5" y="44.2">ε-regularized weights,</text>
-      <text x="98.5" y="48.0">step clipping μ<tspan font-size="2.1" dy="0.8">ij</tspan><tspan dy="-0.8"> ≤ μ</tspan><tspan font-size="2.1" dy="0.8">max</tspan></text>
+      <rect x="66" y="93.0" width="58" height="18.5" rx="1.2" fill="#FFFFFF" stroke="#009E73" stroke-width="0.35"/>
+      <text x="68.5" y="98.2" font-weight="bold">Stabilized SGD</text>
+      <text x="68.5" y="103.4">ε-regularized weights</text>
+      <text x="68.5" y="108.6">step clipping μ<tspan font-size="4.20" dy="1.3">ij</tspan><tspan dy="-1.3"> ≤ μ</tspan><tspan font-size="4.20" dy="1.3">max</tspan></text>
     </g>
     <!-- solver C: sparse stress model (spec section 4) -->
     <g id="so_sparse">
-      <rect x="96.5" y="54.0" width="42" height="15.5" rx="1.2" fill="#FFFFFF" stroke="#009E73" stroke-width="0.3"/>
-      <text x="98.5" y="58.4" font-size="2.6" font-weight="bold">Sparse stress</text>
-      <text x="98.5" y="62.2">k-NN pairs + p pivots</text>
-      <text x="98.5" y="66.0">O(n(k+p)) vs. O(n²) terms</text>
+      <rect x="127" y="93.0" width="58" height="18.5" rx="1.2" fill="#FFFFFF" stroke="#009E73" stroke-width="0.35"/>
+      <text x="129.5" y="98.2" font-weight="bold">Sparse stress</text>
+      <text x="129.5" y="103.4">k-NN pairs + p pivots</text>
+      <text x="129.5" y="108.6">O(n(k+p)) vs. O(n²)</text>
     </g>
-
-    <!-- backends (spec section 12) -->
-    <g id="so_backends">
-      <text x="117.5" y="74.4" text-anchor="middle" fill="#555555">same kernels, two backends</text>
-      <rect x="96.5" y="77.0" width="20" height="11.5" rx="1.2" fill="#009E73"/>
-      <text x="106.5" y="81.4" text-anchor="middle" font-weight="bold" fill="#FFFFFF">CPU</text>
-      <text x="106.5" y="85.4" text-anchor="middle" fill="#FFFFFF">numba</text>
-      <rect x="118.5" y="77.0" width="20" height="11.5" rx="1.2" fill="#009E73"/>
-      <text x="128.5" y="81.4" text-anchor="middle" font-weight="bold" fill="#FFFFFF">GPU</text>
-      <text x="128.5" y="85.4" text-anchor="middle" fill="#FFFFFF">PyTorch CUDA</text>
-    </g>
+    <!-- backends (spec section 12): the same kernels behind two backends -->
+    <text id="so_backends" x="95" y="116.0" text-anchor="middle">Same kernels on CPU (numba) and GPU (PyTorch CUDA)</text>
   </g>
 
-  <!-- ======================= block 4: Output ======================= -->
-  <g id="layer_output" inkscape:label="40 block 4 Output" inkscape:groupmode="layer">
-    <!-- 2D embedding: schematic clusters (hand-placed icon, NOT data) -->
-    <text id="ou_title_embedding" x="166.0" y="14.8" text-anchor="middle" font-weight="bold">2D embedding Y</text>
+  <!-- ======================= row 4: output ======================= -->
+  <!-- header bar y 122.0..128.0, tinted body y 128.0..160.0; left = the 2D
+       layout, right = the temporal extension -->
+  <g id="layer_row4_frame" inkscape:label="40 row4 frame" inkscape:groupmode="layer">
+    <path id="row4_head" d="M 6.5,122.0 H 183.5 A 1.5,1.5 0 0 1 185,123.5 V 128.0 H 5 V 123.5 A 1.5,1.5 0 0 1 6.5,122.0 Z" fill="#CC79A7"/>
+    <path id="row4_body" d="M 5,128.0 H 185 V 158.5 A 1.5,1.5 0 0 1 183.5,160.0 H 6.5 A 1.5,1.5 0 0 1 5,158.5 Z" fill="#F9EDF4"/>
+    <line id="row4_divider" x1="72" y1="130.5" x2="72" y2="157.5" stroke="#CCCCCC" stroke-width="0.3" stroke-dasharray="1.6,1.4"/>
+  </g>
+  <g id="layer_row4_text" inkscape:label="41 row4 text" inkscape:groupmode="layer">
+    <text id="row4_head_text" x="95" y="126.2" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">4  Output — layout in space and time</text>
+
+    <!-- left: the 2D layout itself, drawn as schematic clusters
+         (hand-placed icon, NOT data) -->
+    <text id="ou_title_embedding" x="37.5" y="133.2" text-anchor="middle" font-weight="bold">2D layout Y</text>
     <g id="ou_embedding_icon">
-      <rect x="148.0" y="17.0" width="36" height="26" rx="1.2" fill="#FFFFFF" stroke="#CC79A7" stroke-width="0.3"/>
+      <rect x="9" y="135.5" width="57" height="20" rx="1.2" fill="#FFFFFF" stroke="#CC79A7" stroke-width="0.35"/>
       <g id="ou_cluster_orange" fill="#E69F00">
-        <circle cx="154.2" cy="22.8" r="0.9"/>
-        <circle cx="156.9" cy="22.1" r="0.9"/>
-        <circle cx="158.4" cy="24.6" r="0.9"/>
-        <circle cx="155.3" cy="25.9" r="0.9"/>
-        <circle cx="157.6" cy="27.0" r="0.9"/>
-        <circle cx="153.1" cy="25.1" r="0.9"/>
-        <circle cx="156.0" cy="24.2" r="0.9"/>
+        <circle cx="18.5" cy="140.0" r="1.1"/>
+        <circle cx="22.2" cy="139.2" r="1.1"/>
+        <circle cx="24.4" cy="141.6" r="1.1"/>
+        <circle cx="20.0" cy="143.2" r="1.1"/>
+        <circle cx="23.3" cy="144.0" r="1.1"/>
+        <circle cx="17.0" cy="142.4" r="1.1"/>
+        <circle cx="21.0" cy="141.2" r="1.1"/>
       </g>
       <g id="ou_cluster_sky" fill="#56B4E9">
-        <circle cx="173.0" cy="21.2" r="0.9"/>
-        <circle cx="175.8" cy="20.6" r="0.9"/>
-        <circle cx="177.9" cy="22.9" r="0.9"/>
-        <circle cx="174.4" cy="24.1" r="0.9"/>
-        <circle cx="176.9" cy="25.3" r="0.9"/>
-        <circle cx="172.3" cy="23.8" r="0.9"/>
-        <circle cx="179.2" cy="25.0" r="0.9"/>
+        <circle cx="49.0" cy="139.4" r="1.1"/>
+        <circle cx="52.8" cy="138.8" r="1.1"/>
+        <circle cx="55.6" cy="141.0" r="1.1"/>
+        <circle cx="50.8" cy="142.2" r="1.1"/>
+        <circle cx="54.2" cy="143.4" r="1.1"/>
+        <circle cx="48.0" cy="141.8" r="1.1"/>
+        <circle cx="57.0" cy="143.0" r="1.1"/>
       </g>
       <g id="ou_cluster_green" fill="#009E73">
-        <circle cx="162.6" cy="34.4" r="0.9"/>
-        <circle cx="165.4" cy="33.7" r="0.9"/>
-        <circle cx="167.9" cy="35.6" r="0.9"/>
-        <circle cx="163.8" cy="37.4" r="0.9"/>
-        <circle cx="166.6" cy="38.6" r="0.9"/>
-        <circle cx="161.3" cy="37.0" r="0.9"/>
-        <circle cx="169.1" cy="38.0" r="0.9"/>
-        <circle cx="164.9" cy="36.0" r="0.9"/>
+        <circle cx="33.0" cy="148.6" r="1.1"/>
+        <circle cx="36.8" cy="147.8" r="1.1"/>
+        <circle cx="40.2" cy="149.6" r="1.1"/>
+        <circle cx="34.6" cy="151.2" r="1.1"/>
+        <circle cx="38.4" cy="152.2" r="1.1"/>
+        <circle cx="31.4" cy="150.6" r="1.1"/>
+        <circle cx="41.8" cy="151.8" r="1.1"/>
+        <circle cx="36.0" cy="150.0" r="1.1"/>
       </g>
     </g>
 
-    <!-- temporal extension: E_t = E_alpha(Y_t) + lambda * sum_i m_i ||y_i(t) - y_i(t-1)||^2 (spec section 6.1) -->
-    <text id="ou_title_temporal" x="166.0" y="49.5" text-anchor="middle" font-weight="bold">Temporal extension</text>
-    <g id="ou_temporal_equation" font-size="2.6">
-      <text x="147.0" y="54.6">E<tspan font-size="2.1" dy="0.8">t</tspan><tspan dy="-0.8"> = E</tspan><tspan font-size="2.1" dy="0.8">α</tspan><tspan dy="-0.8">(Y</tspan><tspan font-size="2.1" dy="0.8">t</tspan><tspan dy="-0.8">) +</tspan></text>
-      <text x="147.0" y="59.4">λ Σ<tspan font-size="2.1" dy="0.8">i</tspan><tspan dy="-0.8"> m</tspan><tspan font-size="2.1" dy="0.8">i</tspan><tspan dy="-0.8"> ‖y</tspan><tspan font-size="2.1" dy="0.8">i</tspan><tspan dy="-0.8">(t) − y</tspan><tspan font-size="2.1" dy="0.8">i</tspan><tspan dy="-0.8">(t−1)‖²</tspan></text>
-    </g>
-    <text id="ou_temporal_note" x="147.0" y="63.6" fill="#555555">m<tspan font-size="2.1" dy="0.8">i</tspan><tspan dy="-0.8"> = 1 if node i persists</tspan></text>
+    <!-- right: temporal extension,
+         E_t = E_alpha(Y_t) + lambda sum_i m_i ||y_i(t) - y_i(t-1)||^2
+         (spec section 6.1). The definition of m_i is in the caption.
+         The equation contains subscripts, hence anchored "start": total
+         width 82.07 units (pdfmetrics) centred on x=131 gives
+         x = 131 - 41.04 = 89.96. -->
+    <text id="ou_title_temporal" x="131" y="133.2" text-anchor="middle" font-weight="bold">Temporal extension</text>
+    <text id="ou_temporal_eq" x="89.96" y="139.8">E<tspan font-size="4.20" dy="1.3">t</tspan><tspan dy="-1.3"> = E</tspan><tspan font-size="4.20" dy="1.3">α</tspan><tspan dy="-1.3">(Y</tspan><tspan font-size="4.20" dy="1.3">t</tspan><tspan dy="-1.3">) + λ Σ</tspan><tspan font-size="4.20" dy="1.3">i</tspan><tspan dy="-1.3"> m</tspan><tspan font-size="4.20" dy="1.3">i</tspan><tspan dy="-1.3"> ‖y</tspan><tspan font-size="4.20" dy="1.3">i</tspan><tspan dy="-1.3">(t) − y</tspan><tspan font-size="4.20" dy="1.3">i</tspan><tspan dy="-1.3">(t−1)‖²</tspan></text>
 
-    <!-- trajectory icon: three nodes anchored across consecutive frames (hand-placed, NOT data) -->
+    <!-- trajectory icon: three nodes anchored across consecutive frames
+         (hand-placed icon, NOT data) -->
     <g id="ou_trajectory_icon">
-      <g id="ou_frames" fill="#FFFFFF" stroke="#CC79A7" stroke-width="0.3">
-        <rect x="150.5" y="66.5" width="9" height="16" rx="0.8"/>
-        <rect x="161.5" y="66.5" width="9" height="16" rx="0.8"/>
-        <rect x="172.5" y="66.5" width="9" height="16" rx="0.8"/>
+      <g id="ou_frames" fill="#FFFFFF" stroke="#CC79A7" stroke-width="0.35">
+        <rect x="90" y="142.5" width="24" height="13" rx="0.8"/>
+        <rect x="119" y="142.5" width="24" height="13" rx="0.8"/>
+        <rect x="148" y="142.5" width="24" height="13" rx="0.8"/>
       </g>
-      <g id="ou_trajectory_lines" stroke-width="0.3" fill="none" stroke-opacity="0.7">
-        <polyline points="153.0,70.5 164.5,71.3 175.8,72.5" stroke="#E69F00"/>
-        <polyline points="155.3,75.0 166.0,75.5 177.2,76.6" stroke="#009E73"/>
-        <polyline points="157.0,79.5 168.3,78.6 179.0,77.4" stroke="#56B4E9"/>
+      <g id="ou_trajectory_lines" stroke-width="0.35" fill="none" stroke-opacity="0.75">
+        <polyline points="96,145.2 125,145.9 154,146.7" stroke="#E69F00"/>
+        <polyline points="100,149.2 129,149.6 158,150.1" stroke="#009E73"/>
+        <polyline points="104,153.4 133,153.1 162,152.8" stroke="#56B4E9"/>
       </g>
       <g id="ou_trajectory_nodes">
-        <circle cx="153.0" cy="70.5" r="0.9" fill="#E69F00"/>
-        <circle cx="164.5" cy="71.3" r="0.9" fill="#E69F00"/>
-        <circle cx="175.8" cy="72.5" r="0.9" fill="#E69F00"/>
-        <circle cx="155.3" cy="75.0" r="0.9" fill="#009E73"/>
-        <circle cx="166.0" cy="75.5" r="0.9" fill="#009E73"/>
-        <circle cx="177.2" cy="76.6" r="0.9" fill="#009E73"/>
-        <circle cx="157.0" cy="79.5" r="0.9" fill="#56B4E9"/>
-        <circle cx="168.3" cy="78.6" r="0.9" fill="#56B4E9"/>
-        <circle cx="179.0" cy="77.4" r="0.9" fill="#56B4E9"/>
+        <circle cx="96" cy="145.2" r="1.1" fill="#E69F00"/>
+        <circle cx="125" cy="145.9" r="1.1" fill="#E69F00"/>
+        <circle cx="154" cy="146.7" r="1.1" fill="#E69F00"/>
+        <circle cx="100" cy="149.2" r="1.1" fill="#009E73"/>
+        <circle cx="129" cy="149.6" r="1.1" fill="#009E73"/>
+        <circle cx="158" cy="150.1" r="1.1" fill="#009E73"/>
+        <circle cx="104" cy="153.4" r="1.1" fill="#56B4E9"/>
+        <circle cx="133" cy="153.1" r="1.1" fill="#56B4E9"/>
+        <circle cx="162" cy="152.8" r="1.1" fill="#56B4E9"/>
       </g>
-      <line x1="150.5" y1="85.0" x2="181.0" y2="85.0" stroke="#555555" stroke-width="0.3"/>
-      <polygon points="180.5,83.9 182.7,85.0 180.5,86.1" fill="#555555"/>
-      <text x="184.0" y="85.9" fill="#555555">t</text>
-      <text x="155.0" y="89.3" text-anchor="middle" fill="#555555">t−1</text>
-      <text x="166.0" y="89.3" text-anchor="middle" fill="#555555">t</text>
-      <text x="177.0" y="89.3" text-anchor="middle" fill="#555555">t+1</text>
+      <text id="ou_frame_label_prev" x="102" y="158.6" text-anchor="middle" font-style="italic">t−1</text>
+      <text id="ou_frame_label_t" x="131" y="158.6" text-anchor="middle" font-style="italic">t</text>
+      <text id="ou_frame_label_next" x="160" y="158.6" text-anchor="middle" font-style="italic">t+1</text>
     </g>
   </g>
 </svg>

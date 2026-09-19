@@ -26,6 +26,19 @@ The computation has been handled since 2026-09-14 by the shared module
 - `src/main.py` calls it outside this figure too, so tables/macros do not
 run over stale data.
 
+Author feedback 2026-09-19 (second review): per-point lambda annotations
+used to print the bare number (e.g. "10") next to a curve with no unit or
+symbol attached - illegible on its own, out of context in a screenshot or a
+zoomed crop. Removed: each panel now tags only the ONE lambda value shared
+by every curve by construction, lambda=0 (stab_ratio=1, the vertical dashed
+line, the independent SMACOF baseline), with the in-figure text
+"$\\lambda$=0". Along each curve lambda then increases monotonically from
+right (this line) to left, reaching the grid's largest value (`lam_max` in
+main(), computed from exp4_relative.csv - not hand-typed) at the curve's
+leftmost point; this reading is spelled out in the LaTeX caption
+(clanek_en/supplement/sections/s3_negative_results.tex) instead of being
+re-derived by the reader from bare numbers.
+
 Run: venv\\python.exe -m src.figures.fig_temporal_pareto [--quick|--full|--smoke]
 """
 from __future__ import annotations
@@ -36,13 +49,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import matplotlib.pyplot as plt
+import matplotlib.transforms as transforms
 import pandas as pd
 
-from src.experiments.config_experiments import load_experiments_config
 from src.experiments.exp4_relative import compute_exp4_relative
 from src.figures.fig_common import (
+    ANNOTATION_FONT_PT,
+    LABEL_FONT_PT,
     OKABE_ITO,
-    WIDTH_FULL_WIDTH_IN,
+    WIDTH_SUPPLEMENT_FULL_IN,
     add_quick_arg,
     display_label,
     parse_fig_mode,
@@ -63,17 +78,22 @@ def main() -> None:
     args = parser.parse_args()
     mode = parse_fig_mode(args)
 
-    # S2 tweak (documentation/2026-09-12_kontrola_vysledku_s1.md section 4):
-    # lambda labels at points overlapped for small lambda - restricted to a
-    # selected grid from config_experiments.yaml (fig_temporal_pareto.label_lambdas).
-    label_lambdas = set(load_experiments_config()["fig_temporal_pareto"]["label_lambdas"])
-
+    # 2026-09-19 (author feedback, second review): per-point bare-number
+    # lambda labels ("10" floating with no unit/symbol next to a curve, "the
+    # reader has no idea what it means") REMOVED - see the module docstring
+    # and the caption in clanek_en/supplement/sections/s3_negative_results.tex
+    # for the replacement: the shared vertical dashed line (lambda=0, every
+    # panel) is now tagged with a "$\\lambda$=0" text in-figure, and the
+    # caption explains that lambda increases from right (this line) to left
+    # along each curve, reaching the grid's largest value (lam_max below,
+    # computed from the data, never hand-typed) at each curve's leftmost point.
     logger = get_logger(FIG_NAME, mode=mode)
     relative_path = compute_exp4_relative(mode, logger)
     relative = pd.read_csv(relative_path)
 
     solvers = sorted(relative["solver"].unique())
     datasets = sorted(relative["dataset"].unique())
+    lam_max = float(relative["lam"].max())
 
     # Author feedback 2026-09-17 (supplement legibility pass): (1) raw
     # "..._temporal"/"solver=dtsne" identifiers replaced by display_label();
@@ -84,11 +104,26 @@ def main() -> None:
     # MEANING is identical across all 3 panels (only the data range
     # differs), so it is now a single shared label centered under the whole
     # figure (fig.supxlabel) instead of 3 competing copies.
+    # 2026-09-19 (supplement font-size fix): this figure is embedded ONLY in
+    # the supplement (clanek_en/supplement/sections/s3_negative_results.tex,
+    # [width=\textwidth]) - drawn at WIDTH_SUPPLEMENT_FULL_IN (390pt, see
+    # fig_common.py) so that embed is a no-op scale, instead of the
+    # DAMI-sized WIDTH_FULL_WIDTH_IN (372pt) that left a small 1.05x LaTeX
+    # enlargement on top of already-too-small fontsize= values. The 7
+    # datasets are IDENTICAL across all 3 solver panels (only 3 dedicated,
+    # per-panel legends existed before) - one shared legend below the
+    # figure (constrained_layout reserves real space for it, see the same
+    # fix in fig_neighbor_survival.py) frees each ~130pt-wide panel from a
+    # 7-entry legend box that no longer fit at the bigger LABEL_FONT_PT.
     fig, axes = plt.subplots(
-        1, len(solvers), figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.42 + 0.35), sharey=False,
+        1, len(solvers), figsize=(WIDTH_SUPPLEMENT_FULL_IN, WIDTH_SUPPLEMENT_FULL_IN * 0.62), sharey=False,
+        constrained_layout=True,
     )
+    fig.set_constrained_layout_pads(w_pad=0.05, h_pad=0.03, wspace=0.08, hspace=0.0)
     if len(solvers) == 1:
         axes = [axes]
+    legend_handles: list = []
+    legend_labels: list[str] = []
     for ax, solver in zip(axes, solvers):
         sub_solver = relative[relative["solver"] == solver]
         for i, dataset_name in enumerate(datasets):
@@ -96,26 +131,46 @@ def main() -> None:
             if sub.empty:
                 continue
             color = OKABE_ITO[i % len(OKABE_ITO)]
-            ax.plot(
+            (line,) = ax.plot(
                 sub["stab_ratio_vs_lambda0"], sub["qual_median"], marker="o", color=color,
                 label=display_label(dataset_name, "dataset"), linewidth=1.0, markersize=3,
             )
-            for _, r in sub.iterrows():
-                if not any(abs(r["lam"] - lam_sel) < 1e-9 for lam_sel in label_lambdas):
-                    continue
-                ax.annotate(f"{r['lam']:g}", (r["stab_ratio_vs_lambda0"], r["qual_median"]), fontsize=4.5, xytext=(2, 2), textcoords="offset points")
+            if display_label(dataset_name, "dataset") not in legend_labels:
+                legend_handles.append(line)
+                legend_labels.append(display_label(dataset_name, "dataset"))
         ax.axvline(1.0, color="grey", linewidth=0.6, linestyle="--")
-        ax.set_ylabel("median stress (qual)", fontsize=6.5)
-        ax.set_title(f"Solver: {display_label(solver, 'solver')}", fontsize=7)
-        ax.tick_params(axis="both", labelsize=6)
-        ax.legend(fontsize=5, ncol=1)
-    fig.supxlabel(r"stability ratio vs. $\lambda$=0 (stab($\lambda$)/stab(0))", fontsize=7)
-    fig.suptitle("Temporal regularization Pareto curve: stability gain vs. stress cost (E4)", fontsize=8)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.95))
+        # 2026-09-19 (author feedback, second review): the bare-number
+        # per-curve lambda labels are gone (see the comment above main());
+        # the ONE value every curve shares by construction - lambda=0 at
+        # stab_ratio=1 (this dashed line) - is tagged directly in the
+        # figure instead, with the "lambda increases right-to-left, up to
+        # lam_max at each curve's leftmost point" reading explained in the
+        # caption (same blended-transform tag style as fig_regime_map's
+        # t1/t2 threshold lines).
+        # 2026-09-19 (author feedback, THIRD review): centered on the line
+        # ("ha='center'" straddled the dash-dash-dash exactly through the
+        # "=" glyph, reading as a different symbol) and jammed into the
+        # top-right corner against the frame. Anchored to the RIGHT of the
+        # line instead (ha='right', a few points further left via
+        # xytext/offset points) and pulled down from the very top of the
+        # axes, so the text sits clearly beside the line, not on it, and
+        # clear of both the top and right frame.
+        blended = transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        ax.annotate(
+            r"$\lambda$=0", xy=(1.0, 0.90), xycoords=blended, xytext=(-5, 0), textcoords="offset points",
+            fontsize=ANNOTATION_FONT_PT, color="0.2", ha="right", va="center", zorder=5,
+            bbox=dict(facecolor="white", alpha=0.75, edgecolor="none", pad=0.5),
+        )
+        ax.set_ylabel("median stress (qual)", fontsize=LABEL_FONT_PT)
+        ax.set_title(f"Solver: {display_label(solver, 'solver')}", fontsize=LABEL_FONT_PT)
+        ax.tick_params(axis="both", labelsize=ANNOTATION_FONT_PT)
+    fig.legend(handles=legend_handles, labels=legend_labels, loc="outside lower center", ncol=3, fontsize=LABEL_FONT_PT, frameon=False)
+    fig.supxlabel(r"stability ratio vs. $\lambda$=0 (stab($\lambda$)/stab(0))", fontsize=LABEL_FONT_PT)
+    fig.suptitle("Temporal regularization Pareto curve: stability gain vs. stress cost (E4)", fontsize=LABEL_FONT_PT + 1)
     save_figure(fig, FIG_NAME)
     save_csv_alongside(relative, FIG_NAME)
 
-    print(f"{FIG_NAME}: {len(datasets)} datasets x {len(solvers)} solvers, exp4_relative.csv written to {relative_path}.")
+    print(f"{FIG_NAME}: {len(datasets)} datasets x {len(solvers)} solvers, lambda grid up to {lam_max:g}, exp4_relative.csv written to {relative_path}.")
 
 
 if __name__ == "__main__":

@@ -303,7 +303,11 @@ display_labels:
   # underscore).
   policy:
     "alpha_pred (rule)": '$\alpha$-pred (proposed rule)'
-    "alpha_best (oracle)": '$\alpha$-best (grid optimum, upper bound)'
+    # shortened 2026-09-19 (font-size fix, fig_neighbor_survival.py): the
+    # long form's figure-legend entry overflowed the printed \textwidth
+    # (372pt) at LABEL_FONT_PT; "grid optimum" still conveys "upper bound"
+    # (the best achievable value on the alpha grid).
+    "alpha_best (oracle)": '$\alpha$-best (grid optimum)'
     "alpha=0 (MDS)": '$\alpha=0$ (MDS)'
     "alpha=1 (Sammon)": '$\alpha=1$ (Sammon)'
     "alpha=2 (Kamada-Kawai)": '$\alpha=2$ (Kamada-Kawai)'
@@ -351,6 +355,10 @@ display_labels:
     rho_nn: '$\rho_{NN}$'
     nn_ratio_k1: '$\rho_{NN}$'
     alpha_star: '$\alpha^{*}$'
+    # 2026-09-19 proportions fix: column header for fig_graph_layouts_metrics
+    # (results/tables/fig_graph_layouts_metrics.tex) - the small table that
+    # replaced the in-panel stress/AUC/alpha* numbers of fig_graph_layouts.pdf.
+    distance_metric: "Distance"
     alpha_pred: '$\alpha$ pred.'
     n: '$n$'
     median: "Median"
@@ -1196,11 +1204,17 @@ fig_alpha_curves_all:
   # below the required <=1.23 (500pt available / 390pt width in the
   # supplement draft) - see
   # documentation/2026-09-14_oprava_fig_alpha_curves_all.md
-  panel_height_in: 1.65
-  title_fontsize: 7
-  tick_labelsize: 6
-  ylabel_fontsize: 6.5
-  suptitle_fontsize: 8
+  # panel_height_in bumped 1.65->1.85 2026-09-19 (supplement font-size fix):
+  # the figure now draws at WIDTH_SUPPLEMENT_FULL_IN (390pt, see
+  # fig_common.py) and the four fontsizes below were raised to the Springer
+  # artwork floor (src/common/config.yaml figures.layout label_min_pt=8.0 /
+  # annotation_min_pt=7.4) - the extra row height gives the bigger tick/title
+  # text room without panels touching.
+  panel_height_in: 1.85
+  title_fontsize: 8.0     # = label_min_pt
+  tick_labelsize: 7.4     # = annotation_min_pt
+  ylabel_fontsize: 8.0    # = label_min_pt
+  suptitle_fontsize: 9.0  # 1pt above label_min_pt (a page-level heading, above every panel title)
 
 # K7 (documentation/2026-09-12_plan_smeru_clanku.md) - derivation and LOO
 # validation of the rule alpha_pred = f(nn_ratio_k1) from K1
@@ -1527,12 +1541,17 @@ stats:
     19: 3.517
     20: 3.544
 
-# S2 tweak (documentation/2026-09-12_kontrola_vysledku_s1.md sections 3-4):
-# lambda labels in fig_temporal_pareto.py only for a selected grid, so they
-# do not overlap for small lambda (see the K9/K11 requirement "tweak
-# figures from S1").
-fig_temporal_pareto:
-  label_lambdas: [0.1, 0.3, 1.0, 3.0, 10.0]
+# fig_temporal_pareto.py history: S1/S2 (documentation/2026-09-12_kontrola_vysledku_s1.md
+# sections 3-4) and the 2026-09-19 font-size/proportions fixes iterated a
+# `label_lambdas` grid (from 5 values down to a single lambda=10.0) trying
+# to annotate specific per-curve points without them overlapping - this
+# section is gone as of 2026-09-19 (author feedback, second review): a bare
+# number like "10" next to a curve, with no unit or symbol, is illegible on
+# its own regardless of how well it is spaced. fig_temporal_pareto.py now
+# tags only the shared lambda=0 baseline (the vertical dashed line) directly
+# in the figure and explains the lambda=0->lam_max, right-to-left reading in
+# the caption instead (see the module docstring). Every raw lambda value is
+# still in exp4_relative.csv regardless of what the figure annotates.
 
 # S2 tweak: fig_regime_map.py - dataset labels overlapped at all 32 (see
 # kontrola_vysledku_s1.md); 'label_datasets' is a curated subsample covering
@@ -1569,9 +1588,51 @@ fig_regime_map:
   # units - chosen so at most ~8-9 labels fit across the full E1 vector-dataset
   # range (nn_ratio_k1 in [0.008, 0.5], i.e. ~1.8 decades) without crowding a
   # ~90mm-wide panel at 7pt font.
-  min_log10_x_gap: 0.18
+  # 2026-09-19 (author feedback: "Helix"/"Segment"/"Iris" labels touched
+  # each other and their own markers around nn_ratio_k1 in [0.06, 0.11]) -
+  # raised 0.18->0.24: at 0.18 that cluster's 3 candidates were all >=0.18
+  # apart yet visibly overlapped once actual label TEXT WIDTH (not just
+  # point spacing) is accounted for. Verified (see fig_regime_map.csv/the
+  # rendered PDF) this drops "segment" and "digits" from the labeled set,
+  # leaving 6 labels: hill_valley, two_moons, helix, iris, letter, cnae9 -
+  # every dropped dataset is still a plotted (unlabeled) point and listed in
+  # \supref{6}, per the figure caption.
+  min_log10_x_gap: 0.24
   jitter_seed: 42
   jitter_std: 0.06
+  # 2026-09-19 (author feedback: "Two moons" sat on the x-axis over the
+  # "10^-1" tick label; "CNAE-9"/"Digits"/"Letter" overflowed past the
+  # right edge of the panel; "Helix"/"Segment" collided) - the label
+  # placement below (fig_regime_map._place_dataset_labels) is now computed
+  # ONCE per panel over ALL labeled points sorted by x (not per
+  # synthetic/real group in original DataFrame order, which let two
+  # x-adjacent labels land on the same side by coincidence), using these
+  # fractions of the panel's OWN data range:
+  #   - a point in the top label_top_frac of the y-range is pushed DOWN
+  #     (avoids the panel title above the axes);
+  #   - a point in the bottom label_bottom_frac of the y-range is pushed UP
+  #     (avoids the x-axis line / tick labels below the axes - the exact
+  #     "Two moons" failure);
+  #   - every other point alternates up/down by its rank in sorted x order
+  #     (adjacent-in-x labels now reliably go to opposite sides);
+  #   - a point at or beyond label_right_edge_x_frac of the GLOBAL x-range
+  #     (both panels share nn_ratio_k1) is anchored with its text ending AT
+  #     the point (ha='right', negative x offset) instead of starting there,
+  #     so the label grows back into the panel instead of off its right edge.
+  label_top_frac: 0.82
+  label_bottom_frac: 0.15
+  label_right_edge_x_frac: 0.70
+  label_offset_x_pt: 4.0
+  label_offset_up_pt: 11.0
+  label_offset_down_pt: -11.0
+  # Two or more labels FORCED to the same side (both near the bottom, e.g.
+  # "Letter"/"Digits"/"CNAE-9" in panel 2, or both near the top) no longer
+  # collide: within a run of consecutive (in sorted-x order) labels sharing
+  # the same up/down direction, every other one is pushed out to
+  # label_offset_far_multiplier x the base offset - a 2-level alternation
+  # rather than unbounded growth, since two labels 2 apart in the run are
+  # already separated in x by at least 2*min_log10_x_gap.
+  label_offset_far_multiplier: 1.3
   # Author fact-check 2026-09-18: 04_experimenty.tex claimed rho_NN
   # (nn_ratio_k1) correlates with the grid-optimum alpha more strongly than
   # every other dataset property. Recomputing over ALL numeric columns of
@@ -2341,10 +2402,28 @@ fig_neighborhood_problem:
 # version drew one bar per pairwise insignificant comparison (30+ stacked
 # bars) instead of one bar per MAXIMAL clique of methods that are mutually
 # not significantly different, and labels overlapped the bars. All layout
-# constants below are in INCHES (figure width is fig_common.WIDTH_FULL_WIDTH_IN;
+# constants below are in INCHES (figure width is fig_common.WIDTH_SUPPLEMENT_FULL_IN
+# - this diagram is supplement-only, see clanek_en/supplement/sections/s6_full_tables.tex;
 # height is derived from these constants and the number of label rows/clique
 # bars, so no magic number sits in the plotting code itself).
+#
+# 2026-09-19 (author feedback, second review: "the rank axis is squeezed
+# into about half the figure width, tick labels 9/10/11/12/13 print on top
+# of each other as '910111213', and points of the close-ranked right-hand
+# group visually merge"): left_margin_in/right_margin_in are NO LONGER
+# fixed constants here - fig_cd_diagram.py now MEASURES the actual rendered
+# width of the widest method label on each side (at label_fontsize_pt, via
+# a throwaway matplotlib Text artist) and sizes each margin to fit it plus
+# label_margin_padding_in, so the rank axis gets every inch of width that
+# THIS run's method names do not need (data-driven, not eyeballed - a
+# config change to label_fontsize_pt or a longer method name in
+# display_labels.yaml automatically keeps the axis correctly sized without
+# retuning these numbers by hand). tick_label_stride thins the axis tick
+# TEXT (marks are still drawn at every integer rank) so consecutive labeled
+# ticks have enough width between them for 2-digit numbers.
 fig_cd_diagram:
+  label_margin_padding_in: 0.12  # measured longest label width -> margin (beyond label_gap_in below)
+  tick_label_stride: 2            # print a tick number every Nth rank (1 and n are always printed)
   top_margin_in: 0.95        # room above the axis for the (2-line) title + the CD reference bar
   title_depth_in: 0.14       # distance of the (2-line) title text below the TOP of the figure
   cd_reference_depth_in: 0.64  # distance of the CD reference bar below the top of the figure
@@ -2354,12 +2433,18 @@ fig_cd_diagram:
   # connects. Depth order is axis -> axis_tick_gap_in -> clique bars ->
   # clique_gap_in -> method labels (see fig_cd_diagram._draw_cd_diagram).
   axis_tick_gap_in: 0.14     # axis line -> first critical-difference bar (or first label row if there are no bars)
-  clique_row_height_in: 0.20 # one row per critical-difference bar (maximal clique)
+  # 2026-09-19 (author feedback, second review): 0.20->0.30 - "vetsi
+  # rozestupy mezi vodorovnymi spojnicemi metod" (more vertical space
+  # between the horizontal clique bars, so bars for different cliques don't
+  # read as a single thick smear).
+  clique_row_height_in: 0.30 # one row per critical-difference bar (maximal clique)
   clique_gap_in: 0.14        # last critical-difference bar -> first row of method labels
   label_row_height_in: 0.20  # one row per "fanned-out" method label (left and right side)
   bottom_margin_in: 0.12
-  left_margin_in: 1.55       # reserved for left-side (better-ranked half) method labels
-  right_margin_in: 1.55      # reserved for right-side (worse-ranked half) method labels
+  # left_margin_in/right_margin_in REMOVED 2026-09-19 (second review) -
+  # fig_cd_diagram.py now measures each side's own longest label at
+  # label_fontsize_pt and derives the margin from label_margin_padding_in
+  # above, instead of a fixed guess (see the block comment above).
   label_gap_in: 0.05         # axis edge -> label text anchor
   marker_size_pt: 16
   axis_linewidth: 1.0
@@ -2368,9 +2453,13 @@ fig_cd_diagram:
   connector_linewidth: 0.6
   clique_bar_linewidth: 3.2
   cd_reference_linewidth: 1.8
-  label_fontsize_pt: 6.5
-  tick_fontsize_pt: 6.0
-  title_fontsize_pt: 7.0
+  # 2026-09-19 (font-size fix): bumped to clear the Springer artwork floor
+  # (src/figures/fig_common.py LABEL_FONT_PT=8/ANNOTATION_FONT_PT=7.4) now
+  # that the figure is drawn at the DAMI printed \textwidth (no more LaTeX
+  # shrink) - see config.yaml figures.layout and podklady/2026-09-19_FINAL_validace_rukopis.md V2.
+  label_fontsize_pt: 8.0
+  tick_fontsize_pt: 7.4
+  title_fontsize_pt: 9.0
   # Okabe-Ito indices (fig_common.OKABE_ITO) used for the plot elements.
   axis_color_index: 0     # black - axis line, ticks, points, connectors
   clique_bar_color_index: 5   # blue "#0072B2" - critical-difference bars

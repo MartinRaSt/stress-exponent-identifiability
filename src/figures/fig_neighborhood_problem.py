@@ -180,6 +180,8 @@ from src.experiments.exp_common import resolve_experiment_name
 from src.methods.common import to_distance_matrix
 from src.sammon.metrics import _neighbor_ranks, knn_overlap_count, scale_invariant_stress
 from src.figures.fig_common import (
+    ANNOTATION_FONT_PT,
+    LABEL_FONT_PT,
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
@@ -432,7 +434,19 @@ def main() -> None:
     is_probe = np.zeros(n_points, dtype=bool)
     is_probe[probes] = True
 
-    fig, axes = plt.subplots(1, 3, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN / 3.0 + 1.30))
+    # 2026-09-19 proportions fix (author feedback: axes area too small): the
+    # 3 panels use aspect='equal'/adjustable='box' (so distances are not
+    # visually distorted - this figure's whole point), which means their
+    # rendered size is set by the available WIDTH, not by whatever vertical
+    # fraction subplots_adjust grants them; tightening top/bottom margins
+    # alone (see fig.subplots_adjust below) only turned reserved chrome
+    # space into unused blank canvas, not bigger panels (measured: the
+    # axes-area fraction was BIT-IDENTICAL before/after that alone). This
+    # additive constant (the fixed vertical chrome budget beyond the
+    # roughly-square panel row) is cut from 1.30in to 0.95in to match the
+    # ACTUAL chrome now needed (2 title lines + xlabel + legend + caption),
+    # so the canvas shrinks to fit the content instead of leaving dead space.
+    fig, axes = plt.subplots(1, 3, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN / 3.0 + 0.95))
     csv_rows: list[dict] = []
     scatter_mappable = None
 
@@ -493,8 +507,8 @@ def main() -> None:
         ax.set_aspect("equal", adjustable="box")
         ax.set_xticks([])
         ax.set_yticks([])
-        ax.set_title(_panel_title(panel, tuned_alpha, tsne_method), fontsize=9)
-        ax.set_xlabel(f"neighbors kept: {neighbors_kept:.1f} / {k}\nstress: {stress:.4f}", fontsize=7.5, labelpad=6)
+        ax.set_title(_panel_title(panel, tuned_alpha, tsne_method), fontsize=LABEL_FONT_PT + 1)
+        ax.set_xlabel(f"neighbors kept: {neighbors_kept:.1f} / {k}\nstress: {stress:.4f}", fontsize=LABEL_FONT_PT, labelpad=6)
 
         # Zoom inset: a window of radius `zoom_radius` around the probe, in
         # THIS PANEL'S OWN coordinates, with the three roles marked.
@@ -545,35 +559,50 @@ def main() -> None:
             "true_neighbor_p90_distance_ratio": true_neighbor_p90_dist_ratio,
         })
 
-    fig.subplots_adjust(left=0.03, right=0.90, top=0.83, bottom=0.28, wspace=0.10)
+    # 2026-09-19 (font-size fix): right margin widened (0.90->0.80) and the
+    # colorbar moved/thickened (0.92->0.84, 0.015->0.03) - drawing the figure
+    # at the printed \textwidth (372pt, down from the old 538.6mm-native
+    # canvas) left no room for the enlarged tick/label fonts past x=0.90.
+    # 2026-09-19 proportions fix (author feedback: axes area too small):
+    # top/bottom margins tightened (0.83/0.28 -> 0.88/0.22) now that the
+    # suptitle is a single short line (see below) - frees ~10% of the
+    # canvas height for the panels themselves, and the colorbar was moved
+    # closer to the third panel (0.84 -> 0.82) to use the freed width too.
+    fig.subplots_adjust(left=0.03, right=0.80, top=0.86, bottom=0.25, wspace=0.10)
 
-    cbar_ax = fig.add_axes((0.92, 0.30, 0.015, 0.42))
+    cbar_ax = fig.add_axes((0.84, 0.30, 0.03, 0.42))
     cbar = fig.colorbar(scatter_mappable, cax=cbar_ax)
-    cbar.set_label("Position along the curve (a.u.)", fontsize=7.5)
-    cbar.ax.tick_params(labelsize=6.5)
+    cbar.set_label("Position along the curve (a.u.)", fontsize=LABEL_FONT_PT)
+    cbar.ax.tick_params(labelsize=ANNOTATION_FONT_PT)
 
+    # 2026-09-19 (font-size fix): labels shortened (meaning unchanged) so the
+    # 3-item single-row legend still fits the printed \textwidth (372pt).
     legend_handles = [
         Line2D([0], [0], marker="o", linestyle="", markerfacecolor=probe_color, markeredgecolor="black",
                markersize=7.5, label="probe point"),
         Line2D([0], [0], marker="D", linestyle="", markerfacecolor=_TRUE_NEIGHBOR_COLOR, markeredgecolor="black",
-               markersize=6.5, label=f"true neighbor (original-space, k={k})"),
+               markersize=6.5, label=f"true neighbor (original space, k={k})"),
         Line2D([0], [0], marker="s", linestyle="", markerfacecolor=_INTRUDER_COLOR, markeredgecolor="black",
-               markersize=6.5, label="intruder (embedding-only neighbor)"),
+               markersize=6.5, label="intruder (embedding only)"),
     ]
     fig.legend(
-        handles=legend_handles, loc="lower center", ncol=len(legend_handles), frameon=False, fontsize=7.5,
+        handles=legend_handles, loc="lower center", ncol=len(legend_handles), frameon=False, fontsize=LABEL_FONT_PT,
         bbox_to_anchor=(0.5, 0.09), columnspacing=1.2, handletextpad=0.4,
     )
     fig.text(
         0.5, 0.005,
         f"zoom window radius = {zoom_radius_multiple:g}x this panel's own local point spacing, same probe point in all 3 panels\n"
         "'neighbors kept'/'stress' below each panel are full-dataset averages, not the probe alone",
-        ha="center", va="bottom", fontsize=6.8, linespacing=1.4,
+        ha="center", va="bottom", fontsize=ANNOTATION_FONT_PT, linespacing=1.4,
     )
 
+    # 2026-09-19 (font-size fix): shortened so the title still fits one line
+    # at the printed \textwidth (372pt) - "Original-space" and "point on the
+    # ... dataset" dropped, meaning unchanged (k and the dataset name still
+    # named explicitly).
     fig.suptitle(
-        f"Original-space k={k} nearest neighbors near one probe point on the {display_label(dataset_name, 'dataset')} dataset",
-        fontsize=10, y=0.97,
+        f"k={k} nearest neighbors near one probe point ({display_label(dataset_name, 'dataset')})",
+        fontsize=LABEL_FONT_PT + 1, y=0.97,
     )
 
     save_figure(fig, FIG_NAME)

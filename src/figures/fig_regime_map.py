@@ -73,6 +73,8 @@ from scipy.stats import spearmanr
 
 from src.experiments.config_experiments import load_experiments_config
 from src.figures.fig_common import (
+    ANNOTATION_FONT_PT,
+    LABEL_FONT_PT,
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
@@ -154,6 +156,66 @@ def _select_label_datasets(merged: pd.DataFrame, priority_order: list[str], min_
         selected.append(name)
         selected_log_x.append(x)
     return selected
+
+
+def _place_dataset_labels(
+    ax,
+    merged: pd.DataFrame,
+    label_datasets: set[str],
+    ycol: str,
+    log_x_min: float,
+    log_x_max: float,
+    regime_cfg: dict,
+) -> None:
+    """Draw one annotation per labeled dataset on `ax` (author feedback
+    2026-09-19 - see the config comment `fig_regime_map.label_top_frac` for
+    the full failure description: a label sitting on the x-axis over a tick
+    label, labels overflowing the panel's right edge, and adjacent labels
+    colliding). Computed ONCE over ALL labeled points of this panel, sorted
+    by x, instead of per synthetic/real group in DataFrame order - see the
+    config comment for why that used to place two x-neighboring labels on
+    the same side by coincidence."""
+    labeled = merged[merged.index.isin(label_datasets)].copy()
+    if labeled.empty:
+        return
+    labeled["_log_x"] = np.log10(labeled["nn_ratio_k1"])
+    labeled = labeled.sort_values("_log_x")
+    y_lo, y_hi = float(merged[ycol].min()), float(merged[ycol].max())
+    y_range = y_hi - y_lo
+    x_range = log_x_max - log_x_min
+    top_frac = float(regime_cfg["label_top_frac"])
+    bottom_frac = float(regime_cfg["label_bottom_frac"])
+    right_edge_frac = float(regime_cfg["label_right_edge_x_frac"])
+    x_off_pt = float(regime_cfg["label_offset_x_pt"])
+    up_pt = float(regime_cfg["label_offset_up_pt"])
+    down_pt = float(regime_cfg["label_offset_down_pt"])
+    far_mult = float(regime_cfg["label_offset_far_multiplier"])
+    last_direction: str | None = None
+    run_idx = 0
+    for rank, (name, r) in enumerate(labeled.iterrows()):
+        y_frac = (float(r[ycol]) - y_lo) / y_range if y_range > 0 else 0.5
+        if y_frac >= top_frac:
+            direction = "down"
+        elif y_frac <= bottom_frac:
+            direction = "up"
+        else:
+            direction = "up" if rank % 2 == 0 else "down"
+        # Two+ consecutive (in sorted-x order) labels forced to the SAME
+        # side (e.g. several points all near the bottom of the range) no
+        # longer land on an identical offset - see the config comment on
+        # label_offset_far_multiplier.
+        run_idx = run_idx + 1 if direction == last_direction else 0
+        last_direction = direction
+        magnitude_mult = far_mult if run_idx % 2 == 1 else 1.0
+        y_off = (up_pt if direction == "up" else down_pt) * magnitude_mult
+        x_frac = (float(r["_log_x"]) - log_x_min) / x_range if x_range > 0 else 0.0
+        on_right_edge = x_frac >= right_edge_frac
+        ha = "right" if on_right_edge else "left"
+        x_off = -x_off_pt if on_right_edge else x_off_pt
+        ax.annotate(
+            display_label(name, "dataset"), (r["nn_ratio_k1"], r[ycol]), fontsize=ANNOTATION_FONT_PT, xytext=(x_off, y_off),
+            textcoords="offset points", ha=ha, va="bottom" if y_off > 0 else "top", clip_on=False,
+        )
 
 
 def _spearman_report(x: pd.Series, y: pd.Series) -> tuple[float, float, int]:
@@ -247,17 +309,27 @@ def main() -> None:
     stats_df = pd.DataFrame(stats_rows)
 
     # --- figure: 2 panels -----------------------------------------------------
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.45))
+    # 2026-09-19 proportions fix (author feedback: clipped text - the OLD
+    # one-line rotated ylabel "AUC_RNX(t-SNE) - AUC_RNX(alpha-Sammon
+    # (tuned))" (~45 characters) needed far more vertical space than a
+    # ~110pt-tall panel has, and fig.tight_layout(rect=...) - unlike
+    # constrained_layout - does not resize its rect to fit an oversized
+    # label, so the left end of the label was silently cut off by the
+    # canvas edge). Both labels shortened to short symbols; the full
+    # meaning is already spelled out in the LaTeX caption
+    # (clanek_en/sections/05_vysledky.tex: "Left: advantage of t-SNE over
+    # alpha_auto in AUC_RNX...", "Right: best alpha over the ... grid...").
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.45), constrained_layout=True)
+    fig.set_constrained_layout_pads(w_pad=0.04, h_pad=0.03, wspace=0.10, hspace=0.03)
     color_synth, color_real = OKABE_ITO[6], OKABE_ITO[5]
-    auc_rnx_label = display_label("auc_rnx", "metric")
-    tsne_label = display_label("tsne_auto", "method")
-    alpha_auto_label = display_label("sammon_alpha_auto", "method")
-    panel1_ylabel = f"{auc_rnx_label}({tsne_label}) $-$ {auc_rnx_label}({alpha_auto_label})"
-    panel2_ylabel = r"best $\alpha$ (full grid, by " + auc_rnx_label + ", y jittered)"
+    panel1_ylabel = r"$\Delta$AUC$_{RNX}$ (t-SNE $-$ $\alpha_{\mathrm{auto}}$)"
+    panel2_ylabel = r"best $\alpha$ (y jittered)"
     panels = [
         (ax1, "tsne_minus_alpha_auto", panel1_ylabel, False),
         (ax2, "best_alpha_full_grid_jittered", panel2_ylabel, True),
     ]
+    log_x_all = np.log10(merged["nn_ratio_k1"])
+    log_x_min, log_x_max = float(log_x_all.min()), float(log_x_all.max())
     for ax, ycol, ylabel, is_panel2 in panels:
         for is_synth, color, label in [(True, color_synth, "synthetic"), (False, color_real, "real")]:
             sub = merged[merged["is_synthetic"] == is_synth]
@@ -271,17 +343,15 @@ def main() -> None:
                     sub_holdout["nn_ratio_k1"], sub_holdout[ycol], facecolors="none", edgecolors="black",
                     linewidths=0.6, s=42, rasterized=True, zorder=4, marker="o",
                 )
-            # S2 tweak: labels only for label_datasets (a curated
-            # subsample); a small alternating vertical offset set reduces
-            # overlap even among neighboring labeled points (see config
-            # fig_regime_map.label_datasets and kontrola_vysledku_s1.md section 3).
-            labeled = sub[sub.index.isin(label_datasets)]
-            for k, (name, r) in enumerate(labeled.iterrows()):
-                y_off = 5 if k % 2 == 0 else -8
-                ax.annotate(
-                    display_label(name, "dataset"), (r["nn_ratio_k1"], r[ycol]), fontsize=5, xytext=(3, y_off),
-                    textcoords="offset points", va="bottom" if y_off > 0 else "top",
-                )
+        # S2 tweak: labels only for label_datasets (a curated subsample -
+        # see config fig_regime_map.label_datasets and
+        # kontrola_vysledku_s1.md section 3). Placed ONCE for the whole
+        # panel (both synthetic/real groups together, sorted by x) - see
+        # `_place_dataset_labels` and the config comment on
+        # `label_top_frac` for why (author feedback 2026-09-19: a label on
+        # the x-axis over a tick label, labels overflowing the panel's
+        # right edge, colliding neighbor labels).
+        _place_dataset_labels(ax, merged, label_datasets, ycol, log_x_min, log_x_max, regime_cfg)
         ax.set_xscale("log")
         ax.set_xlabel(f"{display_label('nn_ratio_k1', 'metric')} (log scale)")
         ax.set_ylabel(ylabel)
@@ -303,23 +373,32 @@ def main() -> None:
         blended = transforms.blended_transform_factory(ax.transData, ax.transAxes)
         for x_t, t_label in [(x_t1, r"$t_1$"), (x_t2, r"$t_2$")]:
             ax.axvline(x_t, color="0.35", linewidth=0.8, linestyle="-.", zorder=2)
+            # 2026-09-19 (font-size fix): moved down (0.97->0.90) so the
+            # larger label no longer collides with the panel title above the axes.
             ax.text(
-                x_t, 0.97, t_label, transform=blended, fontsize=6.5, color="0.2", ha="center", va="top",
+                x_t, 0.90, t_label, transform=blended, fontsize=ANNOTATION_FONT_PT, color="0.2", ha="center", va="top",
                 zorder=5, bbox=dict(facecolor="white", alpha=0.75, edgecolor="none", pad=0.5),
             )
+    # 2026-09-19 (font-size fix): a 3-item text legend no longer fits inside
+    # one ~115pt-wide panel at LABEL_FONT_PT (it overflowed the axes on both
+    # sides) - moved to a single figure-level legend below both panels,
+    # which has the full 372pt \textwidth to work with.
+    handles, _labels = ax1.get_legend_handles_labels()
     if merged["is_holdout"].any():
         holdout_handle = plt.Line2D([0], [0], marker="o", linestyle="none", markerfacecolor="none",
-                                     markeredgecolor="black", markersize=5, label="hold-out (independent confirmatory set)")
-        handles, labels = ax1.get_legend_handles_labels()
-        ax1.legend(handles=handles + [holdout_handle], fontsize=5.5)
-    else:
-        ax1.legend(fontsize=5.5)
+                                     markeredgecolor="black", markersize=5, label="hold-out (confirmatory)")
+        handles = handles + [holdout_handle]
+    # 2026-09-19 proportions fix: "outside lower center" (constrained_layout
+    # reserves real, measured space for it) instead of a hand-placed
+    # bbox_to_anchor, which floated the legend at a FIXED figure fraction
+    # regardless of how much the axes above it actually needed - the same
+    # fix already used in fig_temporal_pareto.py / fig_neighbor_survival.py.
+    fig.legend(handles=handles, fontsize=LABEL_FONT_PT, loc="outside lower center", ncol=len(handles), frameon=False)
     rho_p1 = stats_df[(stats_df["subset"] == "all") & (stats_df["panel"] == "tsne_minus_alpha_auto")].iloc[0]
     rho_p2 = stats_df[(stats_df["subset"] == "all") & (stats_df["panel"] == "best_alpha_full_grid")].iloc[0]
-    ax1.set_title(rf"$\rho$={rho_p1['rho']:.2f}, p={rho_p1['pvalue']:.3g}, n={int(rho_p1['n'])}", fontsize=6.5)
-    ax2.set_title(rf"$\rho$={rho_p2['rho']:.2f}, p={rho_p2['pvalue']:.3g}, n={int(rho_p2['n'])}", fontsize=6.5)
-    fig.suptitle("Distance concentration predicts local-vs-global regime (E1 left, E6 right)", fontsize=8)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    ax1.set_title(rf"$\rho$={rho_p1['rho']:.2f}, p={rho_p1['pvalue']:.3g}, n={int(rho_p1['n'])}", fontsize=LABEL_FONT_PT)
+    ax2.set_title(rf"$\rho$={rho_p2['rho']:.2f}, p={rho_p2['pvalue']:.3g}, n={int(rho_p2['n'])}", fontsize=LABEL_FONT_PT)
+    fig.suptitle("Distance concentration predicts local-vs-global regime (E1 left, E6 right)", fontsize=LABEL_FONT_PT)
     save_figure(fig, FIG_NAME)
 
     out_csv = merged.reset_index().rename(columns={"index": "dataset"})

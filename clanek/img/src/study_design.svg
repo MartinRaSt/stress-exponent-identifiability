@@ -6,242 +6,239 @@
   Created: 2026-09-17
   License: for research use within the project; see projectstate.md
 
-  Figure: study_design (process diagram of the STUDY DESIGN, i.e. how the
-          conclusions were reached - NOT the method itself). Distinct from:
-          - method_overview.svg  = pipeline of the alpha-Sammon METHOD
-            (input matrix -> weighted stress -> solvers -> output).
-          - graphical_abstract.svg = one-sentence takeaway (when tuning the
-            exponent pays off, and what it costs).
-  Content (revision 2, 2026-09-17, author feedback): five steps.
-    1 Data: CORE (blue, n=32) vs HOLD-OUT (orange, n=19) - the only place the
-      two lanes are drawn side by side for the DATA itself.
-    2 Embed & evaluate: drawn ONCE as a full-width bar (13-point alpha grid +
-      6 baselines, local/metric/geometry metrics, rho_NN regime split), with
-      an explicit note that it is applied to core and hold-out
-      INDEPENDENTLY - steps 2/3 of revision 1 were duplicated side by side,
-      which wasted width without adding information; merged here.
-    3 Fit the rule (core only) / Held out - the two lanes reappear because
-      this is exactly where they differ: only core data fits alpha_pred;
-      hold-out is untouched (pause icon) until step 4.
-    4 Confirmatory test (hold-out only) - both lanes merge here.
-    5 Conclusions.
-  Units:   1 user unit = 1 mm (viewBox 0 0 190 123, page 190 mm x 123 mm).
-           Height cut from 183 mm (revision 1) to 123 mm by merging steps
-           2/3 (author feedback: revision 1 was near-square and would take
-           most of a journal page). Width still matches
-           method_overview.svg/graphical_abstract.svg (190 mm) so that, once
-           LaTeX scales the PDF down to \textwidth, body text renders at the
-           same physical size as in the two sibling figures.
-  Fonts:   DejaVu Sans. Body text 2.8 mm (~8 pt), block headers 3.0 mm bold,
-           title 3.4 mm bold. Greek-letter subscripts (rho_NN, alpha_pred,
-           AUC_RNX) use 2.1 mm - the same convention as the one accepted
-           exception in graphical_abstract.svg (there: 2.3-2.4 mm for "NN").
-  No underscores in rendered text (author feedback, revision 2): every
-  identifier-style name is typeset properly instead of shown as a code
-  identifier:
-    AUC_RNX   -> "AUC" + subscript "RNX"
-    Q_global  -> "Q (global)"
-    rho_NN    -> Greek rho + subscript "NN"           (matches graphical_abstract.svg)
-    alpha_pred-> Greek alpha + subscript "pred"        (matches graphical_abstract.svg)
-    F_A1-F_A7 -> "hypothesis families A1-A7"
-    alpha grid/alpha = 0 -> literal Greek alpha character (no subscript needed)
-  Known svglib limitation (see graphical_abstract_provenance.md): svglib/
-  reportlab centres every <tspan> of a <text> INDEPENDENTLY, not as one
-  concatenated block. Fix used throughout this file: NO <tspan> is used
-  anywhere. Every plain label is one <text> string (a lone Greek letter with
-  no subscript, e.g. in "alpha grid", is typed directly into that string).
-  Every Greek-letter+subscript COMBINATION (rho_NN, alpha_pred, AUC_RNX) is
-  built from 2-6 separate <text text-anchor="start"> runs placed at
-  hand-computed x offsets so they read as one continuous line; the offsets
-  were computed exactly (not eyeballed) with reportlab's
-  pdfmetrics.stringWidth on the registered "DejaVu Sans" font at the exact
-  font sizes used here (see the "x=" comments next to each run below) to
-  avoid the multi-round trial-and-error that plain eyeballing would need.
+  Figure: study_design - process diagram of the STUDY DESIGN (how the
+          conclusions were reached), in five steps. Distinct from:
+          - method_overview.svg    = pipeline of the alpha-Sammon METHOD;
+          - graphical_abstract.svg = the one-sentence takeaway.
+
+  ============================ REDRAW 2026-09-19 ============================
+  Reason (author feedback): "Study design - the texts are too large, it does
+  not look good". After the 2026-09-19 font-size fix (every glyph raised to
+  the Springer Nature artwork floor) the figure had become almost pure text:
+  five bands of two to four dense sentences each, with the blocks nearly
+  touching. At a fixed page width of 131.23mm (= the DAMI \textwidth of
+  372pt) and a font floor of 8pt the only remedy is LESS TEXT and MORE
+  WHITE SPACE, not smaller type.
+
+  What changed (LAYOUT + WORDING; nothing was silently deleted - every item
+  removed from the drawing is listed below and belongs in the CAPTION):
+    * every block now carries its header plus AT MOST ONE short line;
+    * gaps between consecutive steps doubled (3.5 -> 7.0 user units) and the
+      block bodies hold a single line with generous padding, so the five
+      steps are visible as five steps at a glance;
+    * the smallest font tier (3.78 units = 7.4pt, used for the dense metric
+      rows) is GONE: the figure now uses only 4.20 / 4.29 / 4.60 / 5.31
+      units, i.e. nothing prints below 8.2pt (same tiers as
+      method_overview.svg, author requirement 2026-09-19);
+    * the decorative dashed lane divider was dropped (visual noise);
+    * the "pause" icon in block 3 (two vertical bars) looked like a
+      rendering artefact and was replaced by a padlock icon, which reads
+      immediately as "sealed / not opened yet";
+    * total height 123 -> 124 user units (242.8pt), i.e. unchanged, but the
+      number of rendered text lines dropped from 20 to 12.
+  Moved from the drawing to the figure CAPTION (verbatim list, so that
+  nothing is lost - the caption text is in study_design_provenance.md):
+    - the subtitle "From data to a pre-registered rule: fitted on training,
+      confirmed on hold-out";
+    - "(separate case studies, outside this split)" under the aside box;
+    - the alpha grid step (0.25) and the names of the eight baselines
+      (MDS, PCA, t-SNE, UMAP, PaCMAP, TriMap, densMAP, PHATE);
+    - the metric names behind the three metric groups (local: AUC_RNX,
+      trustworthiness, kNN Jaccard; global: scale-invariant stress, Shepard
+      rho, Q global; geometry: class spread, centroid distance);
+    - "Regime: split by rho_NN (low/mid/high)";
+    - "Leave-one-dataset-out (LODO)" under the fitted rule;
+    - "Pre-registered hypothesis families A1-A7" and "Holm-Bonferroni
+      correction for multiple comparisons";
+    - the second conclusion "The rule gives alpha_pred for free: no extra
+      embedding run".
+
+  Units:   viewBox 0 0 190 124; the physical page is 131.23mm x 85.65mm,
+           i.e. 1 user unit = 131.23/190 = 0.690684 mm on the printed page
+           (same convention as method_overview.svg). The figure is inserted
+           at width=\textwidth (372pt), so the PDF is placed at scale 1 and
+           printed pt = user units * 372/190 = user units * 1.95789
+           (src/figures/check_font_sizes.py derives the same factor from the
+           viewBox, because svglib emits the "Tf" operator in viewBox units).
+           The height is 242.8pt = 0.44 * \textheight (552.69pt), i.e. below
+           the 0.45 ceiling the author set for this figure.
+  Fonts:   DejaVu Sans (covers the Greek letters used here), embedded.
+             title (bold)            5.31 units = 10.40 pt
+             block header (bold)     4.60 units =  9.01 pt
+             body / labels           4.29 units =  8.40 pt
+             subscripts              4.20 units =  8.22 pt
+           NOTHING prints below 8 pt; subscripts are distinguished by their
+           baseline shift (dy), not by a size drop.
+  No underscores in rendered text (author feedback): rho_NN and alpha_pred
+  are typeset as Greek letter + subscript, never as code identifiers.
+  svglib limitations honoured here (see method_overview.svg):
+    (a) text-anchor="middle" is applied to every <tspan> SEPARATELY, so any
+        text containing a <tspan> is anchored "start" at an x computed
+        exactly with reportlab pdfmetrics.stringWidth (the arithmetic is
+        given in a comment next to each such line); single-run texts use
+        "middle";
+    (b) the character "&lt;" is dropped from the embedded subset font by
+        reportlab in this document, so it is never used in rendered text.
   Colours: Okabe-Ito colour-blind safe palette.
-           CORE column        - blue        #0072B2 (header) / #E5EFF7 (tint)
-           HOLD-OUT column    - orange      #E69F00 (header) / #FCF3E0 (tint)
-           Confirmatory test  - bluish green #009E73 (header) / #E0F4EE (tint)
-           Conclusions        - reddish purple #CC79A7 (header) / #F9EDF4 (tint)
-           connectors/dividers/dashed "untouched" box - neutral grey only,
-           never used for text. All body/heading text is #1A1A1A (near-black)
-           or white-on-colour; no grey text anywhere.
+           training lane       - blue           #0072B2 head / #E5EFF7 body
+           hold-out lane       - orange         #E69F00 head / #FCF3E0 body
+           step 2 (both lanes) - neutral grey   #595959 head / #EDEFF0 body
+           confirmatory test   - bluish green   #009E73 head / #E0F4EE body
+           conclusions         - reddish purple #CC79A7 head / #F9EDF4 body
+           connectors, the split bracket and the aside box use neutral grey
+           only, never for text. All text is #1A1A1A or white on colour.
   Layers:  each top-level <g> is an Inkscape layer (inkscape:groupmode="layer").
   Build:   make_study_design.bat / .sh (svglib + reportlab via
            clanek/img/src/svg2pdf.py; Inkscape is not on PATH on this machine).
-  Note:    all boxes/arrows are hand-placed schematic shapes; every number
-           and every method/metric name is taken from the project
-           configuration and article text - see study_design_provenance.md
-           for the source of each one. No experimental result values are
-           plotted in this figure (it describes the design, not a result).
+  Note:    all boxes and icons are hand-placed schematic shapes; no
+           experimental result is plotted here (this describes the design,
+           not a result). The source of every number and name is in
+           study_design_provenance.md.
+
+  Vertical grid (user units); blocks are 5.6 (header) + 9.0 (body), gaps 7.0:
+    title 6.0 | rule 8.6 | split label 13.9 | bracket 15.6
+    step 1  19.6 ..  34.2      aside box 34.9 .. 40.5
+    step 2  41.2 ..  55.8
+    step 3  62.8 ..  77.4
+    step 4  84.4 ..  99.0
+    step 5 106.0 .. 120.6      page 124.0
+  Header baselines are top + 4.48, body baselines are top + 6.06 (both
+  centre the cap height of the respective font tier inside its band).
 -->
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-     width="190mm" height="123mm" viewBox="0 0 190 123"
-     font-family="DejaVu Sans" font-size="2.8" fill="#1A1A1A">
+     width="131.23mm" height="85.65mm" viewBox="0 0 190 124"
+     font-family="DejaVu Sans" font-size="4.29" fill="#1A1A1A">
 
   <!-- ======================= background ======================= -->
   <g id="layer_background" inkscape:label="00 background" inkscape:groupmode="layer">
-    <rect id="page" x="0" y="0" width="190" height="123" fill="#FFFFFF"/>
+    <rect id="page" x="0" y="0" width="190" height="124" fill="#FFFFFF"/>
   </g>
 
   <!-- ======================= title ======================= -->
-  <g id="layer_title" inkscape:label="01 title">
-    <text id="title" x="95" y="4.3" text-anchor="middle" font-size="3.4" font-weight="bold" fill="#1A1A1A">Study design</text>
-    <text id="subtitle" x="95" y="7.3" text-anchor="middle" font-size="2.8" fill="#1A1A1A">From data to a pre-registered rule: fitted on the training sample, confirmed on an independent hold-out sample</text>
-    <line id="title_rule" x1="5" y1="8.3" x2="185" y2="8.3" stroke="#CCCCCC" stroke-width="0.25"/>
+  <g id="layer_title" inkscape:label="01 title" inkscape:groupmode="layer">
+    <text id="title" x="95" y="6.0" text-anchor="middle" font-size="5.31" font-weight="bold" fill="#1A1A1A">Study design</text>
+    <line id="title_rule" x1="5" y1="8.6" x2="185" y2="8.6" stroke="#CCCCCC" stroke-width="0.25"/>
   </g>
 
-  <!-- ======================= lane divider (decorative, sits only in the gap between the two columns) ======================= -->
-  <g id="layer_lane_divider" inkscape:label="02 lane divider">
-    <line id="lane_divider_line" x1="95" y1="15.3" x2="95" y2="80.3" stroke="#CCCCCC" stroke-width="0.3" stroke-dasharray="1.6,1.4"/>
+  <!-- ======================= data split bracket ======================= -->
+  <!-- one pool of datasets splitting into the two lanes; the bracket spans
+       exactly the two lane axes (x=45 and x=145) -->
+  <g id="layer_split" inkscape:label="02 data split" inkscape:groupmode="layer">
+    <text id="split_label" x="95" y="13.9" text-anchor="middle" fill="#1A1A1A">51 vector datasets, split before any rule fitting</text>
+    <line id="split_bar" x1="45" y1="15.6" x2="145" y2="15.6" stroke="#999999" stroke-width="0.35"/>
+    <line id="split_drop_left" x1="45" y1="15.6" x2="45" y2="18.2" stroke="#999999" stroke-width="0.4"/>
+    <polygon id="split_head_left" points="43.7,18.2 46.3,18.2 45,19.6" fill="#999999"/>
+    <line id="split_drop_right" x1="145" y1="15.6" x2="145" y2="18.2" stroke="#999999" stroke-width="0.4"/>
+    <polygon id="split_head_right" points="143.7,18.2 146.3,18.2 145,19.6" fill="#999999"/>
   </g>
 
-  <!-- ======================= data split annotation ======================= -->
-  <g id="layer_split" inkscape:label="03 data split annotation" font-size="2.8">
-    <text id="split_label" x="95" y="11.3" text-anchor="middle" fill="#1A1A1A">51 vector datasets, split before any rule fitting</text>
-    <line id="split_bar" x1="45" y1="12.3" x2="145" y2="12.3" stroke="#999999" stroke-width="0.35"/>
-    <line id="split_arrow_left" x1="45" y1="12.3" x2="45" y2="14.1" stroke="#999999" stroke-width="0.4"/>
-    <polygon id="split_arrowhead_left" points="43.7,14.1 46.3,14.1 45,15.3" fill="#999999"/>
-    <line id="split_arrow_right" x1="145" y1="12.3" x2="145" y2="14.1" stroke="#999999" stroke-width="0.4"/>
-    <polygon id="split_arrowhead_right" points="143.7,14.1 146.3,14.1 145,15.3" fill="#999999"/>
+  <!-- ======================= flow arrows between the steps ======================= -->
+  <g id="layer_arrows" inkscape:label="03 flow arrows" inkscape:groupmode="layer" stroke="#757575" fill="#757575">
+    <!-- step 1 -> step 2 (two lanes; the arrows pass beside the aside box,
+         whose x range 48..142 never reaches the arrowheads at 43.7..46.3
+         and 143.7..146.3) -->
+    <line x1="45" y1="34.2" x2="45" y2="39.8" stroke-width="0.45"/>
+    <polygon points="43.7,39.8 46.3,39.8 45,41.2" stroke="none"/>
+    <line x1="145" y1="34.2" x2="145" y2="39.8" stroke-width="0.45"/>
+    <polygon points="143.7,39.8 146.3,39.8 145,41.2" stroke="none"/>
+    <!-- step 2 -> step 3 (back into the two lanes) -->
+    <line x1="45" y1="55.8" x2="45" y2="61.4" stroke-width="0.45"/>
+    <polygon points="43.7,61.4 46.3,61.4 45,62.8" stroke="none"/>
+    <line x1="145" y1="55.8" x2="145" y2="61.4" stroke-width="0.45"/>
+    <polygon points="143.7,61.4 146.3,61.4 145,62.8" stroke="none"/>
+    <!-- step 3 -> step 4 (the two lanes meet in the confirmatory test) -->
+    <line x1="45" y1="77.4" x2="45" y2="83.0" stroke-width="0.45"/>
+    <polygon points="43.7,83.0 46.3,83.0 45,84.4" stroke="none"/>
+    <line x1="145" y1="77.4" x2="145" y2="83.0" stroke-width="0.45"/>
+    <polygon points="143.7,83.0 146.3,83.0 145,84.4" stroke="none"/>
+    <!-- step 4 -> step 5 (single, centred) -->
+    <line x1="95" y1="99.0" x2="95" y2="104.6" stroke-width="0.45"/>
+    <polygon points="93.7,104.6 96.3,104.6 95,106.0" stroke="none"/>
   </g>
 
-  <!-- ======================= step 1: data (core / hold-out) ======================= -->
-  <g id="layer_step1_frames" inkscape:label="10 step1 frames">
-    <path id="core_data_head" d="M 6.5,15.3 H 83.5 A 1.5,1.5 0 0 1 85,16.8 V 20.3 H 5 V 16.8 A 1.5,1.5 0 0 1 6.5,15.3 Z" fill="#0072B2"/>
-    <path id="core_data_body" d="M 5,20.3 H 85 V 25.3 A 1.5,1.5 0 0 1 83.5,26.8 H 6.5 A 1.5,1.5 0 0 1 5,25.3 Z" fill="#E5EFF7"/>
-    <path id="holdout_data_head" d="M 106.5,15.3 H 183.5 A 1.5,1.5 0 0 1 185,16.8 V 20.3 H 105 V 16.8 A 1.5,1.5 0 0 1 106.5,15.3 Z" fill="#E69F00"/>
-    <path id="holdout_data_body" d="M 105,20.3 H 185 V 25.3 A 1.5,1.5 0 0 1 183.5,26.8 H 106.5 A 1.5,1.5 0 0 1 105,25.3 Z" fill="#FCF3E0"/>
+  <!-- ======================= step 1: the two samples ======================= -->
+  <g id="layer_step1_frames" inkscape:label="10 step1 frames" inkscape:groupmode="layer">
+    <path id="train_head" d="M 6.5,19.6 H 83.5 A 1.5,1.5 0 0 1 85,21.1 V 25.2 H 5 V 21.1 A 1.5,1.5 0 0 1 6.5,19.6 Z" fill="#0072B2"/>
+    <path id="train_body" d="M 5,25.2 H 85 V 32.7 A 1.5,1.5 0 0 1 83.5,34.2 H 6.5 A 1.5,1.5 0 0 1 5,32.7 Z" fill="#E5EFF7"/>
+    <path id="holdout_head" d="M 106.5,19.6 H 183.5 A 1.5,1.5 0 0 1 185,21.1 V 25.2 H 105 V 21.1 A 1.5,1.5 0 0 1 106.5,19.6 Z" fill="#E69F00"/>
+    <path id="holdout_body" d="M 105,25.2 H 185 V 32.7 A 1.5,1.5 0 0 1 183.5,34.2 H 106.5 A 1.5,1.5 0 0 1 105,32.7 Z" fill="#FCF3E0"/>
   </g>
-  <g id="layer_step1_text" inkscape:label="11 step1 text">
-    <text id="core_data_head_text" x="45" y="18.7" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#FFFFFF">1  TRAINING — 32 datasets</text>
-    <text id="core_data_body_text" x="45" y="24.0" text-anchor="middle" fill="#1A1A1A">Rule-fitting sample</text>
-    <text id="holdout_data_head_text" x="145" y="18.7" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#FFFFFF">1  HOLD-OUT — 19 datasets</text>
-    <text id="holdout_data_body_text" x="145" y="24.0" text-anchor="middle" fill="#1A1A1A">Independent confirmatory sample</text>
-  </g>
-
-  <!-- ======================= aside: graphs + temporal networks (outside the core/hold-out split) ======================= -->
-  <g id="layer_aside" inkscape:label="12 aside data note">
-    <rect id="aside_box" x="55" y="27.8" width="80" height="7" rx="1.5" ry="1.5" fill="#F2F2F2" stroke="#999999" stroke-width="0.35" stroke-dasharray="1.6,1.2"/>
-    <text id="aside_line1" x="95" y="31.0" text-anchor="middle" fill="#1A1A1A">Also used: 12 graphs + 7 temporal networks</text>
-    <text id="aside_line2" x="95" y="33.6" text-anchor="middle" fill="#1A1A1A">(separate case studies, outside this split)</text>
+  <g id="layer_step1_text" inkscape:label="11 step1 text" inkscape:groupmode="layer">
+    <text id="train_head_text" x="45" y="24.08" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">1  Training &#8212; 32 datasets</text>
+    <text id="train_body_text" x="45" y="31.26" text-anchor="middle" fill="#1A1A1A">Rule is fitted here</text>
+    <text id="holdout_head_text" x="145" y="24.08" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">1  Hold-out &#8212; 19 datasets</text>
+    <text id="holdout_body_text" x="145" y="31.26" text-anchor="middle" fill="#1A1A1A">Kept for the final test</text>
   </g>
 
-  <!-- ======================= arrows: step1 -> step2 (pass beside the aside box, x=45/145 never overlap x=55-135) ======================= -->
-  <g id="layer_arrows_1_2" inkscape:label="13 arrows step1-2" fill="#757575" stroke="#757575">
-    <line x1="45" y1="26.8" x2="45" y2="36.8" stroke-width="0.4"/>
-    <polygon points="43.7,36.8 46.3,36.8 45,38.3" fill="#757575" stroke="none"/>
-    <line x1="145" y1="26.8" x2="145" y2="36.8" stroke-width="0.4"/>
-    <polygon points="143.7,36.8 146.3,36.8 145,38.3" fill="#757575" stroke="none"/>
+  <!-- ======================= aside: data outside the split ======================= -->
+  <g id="layer_aside" inkscape:label="12 aside data note" inkscape:groupmode="layer">
+    <rect id="aside_box" x="48" y="34.9" width="94" height="5.6" rx="1.4" ry="1.4" fill="#F5F5F5" stroke="#999999" stroke-width="0.35" stroke-dasharray="1.6,1.2"/>
+    <text id="aside_text" x="95" y="39.27" text-anchor="middle" fill="#1A1A1A">Also: 12 graphs + 7 temporal networks</text>
   </g>
 
-  <!-- ======================= step 2: embed & evaluate (MERGED, full width - applied to both lanes independently) ======================= -->
-  <g id="layer_step2_frame" inkscape:label="20 step2 frame">
-    <path id="pipeline_head" d="M 6.5,38.3 H 183.5 A 1.5,1.5 0 0 1 185,39.8 V 43.3 H 5 V 39.8 A 1.5,1.5 0 0 1 6.5,38.3 Z" fill="#595959"/>
-    <path id="pipeline_body" d="M 5,43.3 H 185 V 61.3 A 1.5,1.5 0 0 1 183.5,62.8 H 6.5 A 1.5,1.5 0 0 1 5,61.3 Z" fill="#EDEFF0"/>
+  <!-- ======================= step 2: embed and evaluate ======================= -->
+  <g id="layer_step2_frame" inkscape:label="20 step2 frame" inkscape:groupmode="layer">
+    <path id="pipeline_head" d="M 6.5,41.2 H 183.5 A 1.5,1.5 0 0 1 185,42.7 V 46.8 H 5 V 42.7 A 1.5,1.5 0 0 1 6.5,41.2 Z" fill="#595959"/>
+    <path id="pipeline_body" d="M 5,46.8 H 185 V 54.3 A 1.5,1.5 0 0 1 183.5,55.8 H 6.5 A 1.5,1.5 0 0 1 5,54.3 Z" fill="#EDEFF0"/>
   </g>
-  <g id="layer_step2_text" inkscape:label="21 step2 text">
-    <text id="pipeline_head_text" x="95" y="41.7" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#FFFFFF">2  Embed &amp; evaluate — applied to training and hold-out independently</text>
-    <text id="pipeline_row1" x="95" y="47.7" text-anchor="middle" fill="#1A1A1A">&#945; grid: 0, 0.25, 0.5, ..., 3.0 (13 values)</text>
-    <text id="pipeline_row2" x="95" y="51.5" text-anchor="middle" fill="#1A1A1A">Baselines: t-SNE, UMAP, PaCMAP, TriMap, densMAP, PHATE</text>
-    <!-- row A: "Local: AUC[RNX], trustworthiness, kNN Jaccard      Metric: stress (scale-inv.), Shepard corr., Q (global)"
-         x offsets computed with reportlab stringWidth on "DejaVu Sans" (see svg2pdf.py):
-         part1 "Local: AUC" @2.8mm starts x=25.56; part2 "RNX" @2.1mm subscript starts x=40.62 (25.56+15.06);
-         part3 (rest) @2.8mm starts x=45.09 (25.56+19.53). Baseline y=55.3, subscript dy=+1.0 -> y=56.3. -->
-    <text id="rowA_p1" x="25.56" y="55.3" text-anchor="start" fill="#1A1A1A">Local: AUC</text>
-    <text id="rowA_sub" x="40.62" y="56.3" text-anchor="start" font-size="2.1" fill="#1A1A1A">RNX</text>
-    <text id="rowA_p2" x="45.09" y="55.3" text-anchor="start" xml:space="preserve" fill="#1A1A1A">, trustworthiness, kNN Jaccard      Metric: stress (scale-inv.), Shepard corr., Q (global)</text>
-    <!-- row B: "Geometry: class spread, centroid distance      Regime: split by rho[NN] (low / mid / high ratio)"
-         part1 @2.8mm starts x=32.38; part2 "rho" @2.8mm starts x=120.66 (32.38+88.28);
-         part3 "NN" @2.1mm subscript starts x=122.44 (32.38+90.06); part4 (rest) @2.8mm starts x=125.58 (32.38+93.20).
-         Baseline y=59.1, subscript dy=+1.0 -> y=60.1. -->
-    <text id="rowB_p1" x="32.38" y="59.1" text-anchor="start" xml:space="preserve" fill="#1A1A1A">Geometry: class spread, centroid distance      Regime: split by </text>
-    <text id="rowB_rho" x="120.66" y="59.1" text-anchor="start" fill="#1A1A1A">&#961;</text>
-    <text id="rowB_sub" x="122.44" y="60.1" text-anchor="start" font-size="2.1" fill="#1A1A1A">NN</text>
-    <text id="rowB_p2" x="125.58" y="59.1" text-anchor="start" xml:space="preserve" fill="#1A1A1A"> (low / mid / high ratio)</text>
+  <g id="layer_step2_text" inkscape:label="21 step2 text" inkscape:groupmode="layer">
+    <text id="pipeline_head_text" x="95" y="45.68" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">2  Embed &amp; evaluate &#8212; each sample independently</text>
+    <text id="pipeline_body_text" x="95" y="52.86" text-anchor="middle" fill="#1A1A1A">&#945; grid 0&#8211;3 (13 values), 8 baselines, local / global / geometry metrics</text>
   </g>
 
-  <!-- ======================= arrows: step2 -> step3 (split back into two lanes) ======================= -->
-  <g id="layer_arrows_2_3" inkscape:label="22 arrows step2-3">
-    <line x1="45" y1="62.8" x2="45" y2="64.8" stroke="#757575" stroke-width="0.4"/>
-    <polygon points="43.7,64.8 46.3,64.8 45,66.3" fill="#757575"/>
-    <line x1="145" y1="62.8" x2="145" y2="64.8" stroke="#757575" stroke-width="0.4"/>
-    <polygon points="143.7,64.8 146.3,64.8 145,66.3" fill="#757575"/>
+  <!-- ======================= step 3: fit the rule / held out ======================= -->
+  <g id="layer_step3_frames" inkscape:label="30 step3 frames" inkscape:groupmode="layer">
+    <path id="fit_head" d="M 6.5,62.8 H 83.5 A 1.5,1.5 0 0 1 85,64.3 V 68.4 H 5 V 64.3 A 1.5,1.5 0 0 1 6.5,62.8 Z" fill="#0072B2"/>
+    <path id="fit_body" d="M 5,68.4 H 85 V 75.9 A 1.5,1.5 0 0 1 83.5,77.4 H 6.5 A 1.5,1.5 0 0 1 5,75.9 Z" fill="#E5EFF7"/>
+    <path id="sealed_head" d="M 106.5,62.8 H 183.5 A 1.5,1.5 0 0 1 185,64.3 V 68.4 H 105 V 64.3 A 1.5,1.5 0 0 1 106.5,62.8 Z" fill="#E69F00"/>
+    <!-- dashed body = "nothing has happened here yet" (the only dashed block) -->
+    <rect id="sealed_body" x="105" y="68.4" width="80" height="9" rx="1.5" ry="1.5" fill="#FEFAF0" stroke="#E69F00" stroke-width="0.35" stroke-dasharray="1.6,1.2"/>
+  </g>
+  <g id="layer_step3_text" inkscape:label="31 step3 text" inkscape:groupmode="layer">
+    <text id="fit_head_text" x="45" y="67.28" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">3  Fit the rule (training)</text>
+    <!-- "alpha[pred] = g(rho[NN])" contains subscripts, hence anchored
+         "start": the run widths measured with reportlab
+         pdfmetrics.stringWidth on the registered "DejaVu Sans" at 4.29 /
+         4.20 units sum to 33.87 units, centred on the lane axis x=45
+         -> x = 45 - 33.87/2 = 28.06 -->
+    <text id="fit_body_text" x="28.06" y="74.46" xml:space="preserve" fill="#1A1A1A">&#945;<tspan font-size="4.20" dy="1.3">pred</tspan><tspan dy="-1.3"> = g(&#961;</tspan><tspan font-size="4.20" dy="1.3">NN</tspan><tspan dy="-1.3">)</tspan></text>
+    <text id="sealed_head_text" x="145" y="67.28" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">3  Held out</text>
+    <!-- padlock icon + label, centred as one unit on the lane axis x=145:
+         icon 5.0 + gap 3.0 + label 48.93 (stringWidth at 4.29) = 56.93,
+         so the icon starts at 145 - 56.93/2 = 116.53 and the label at
+         116.53 + 5.0 + 3.0 = 124.53 (anchored "start"). -->
+    <g id="sealed_padlock" fill="#E69F00">
+      <path id="padlock_shackle" d="M 117.78,71.8 V 70.55 A 1.25,1.25 0 0 1 120.28,70.55 V 71.8" fill="none" stroke="#E69F00" stroke-width="0.85"/>
+      <rect id="padlock_body" x="116.53" y="71.8" width="5" height="4" rx="0.6" ry="0.6"/>
+      <circle id="padlock_hole" cx="119.03" cy="73.3" r="0.55" fill="#FEFAF0"/>
+      <rect id="padlock_slot" x="118.83" y="73.5" width="0.4" height="1.1" fill="#FEFAF0"/>
+    </g>
+    <text id="sealed_body_text" x="124.53" y="74.46" text-anchor="start" fill="#1A1A1A">Untouched until step 4</text>
   </g>
 
-  <!-- ======================= step 3: fit the rule (core only) / held out ======================= -->
-  <g id="layer_step3_frames" inkscape:label="30 step3 frames">
-    <path id="core_fit_head" d="M 6.5,66.3 H 83.5 A 1.5,1.5 0 0 1 85,67.8 V 71.3 H 5 V 67.8 A 1.5,1.5 0 0 1 6.5,66.3 Z" fill="#0072B2"/>
-    <path id="core_fit_body" d="M 5,71.3 H 85 V 79.3 A 1.5,1.5 0 0 1 83.5,80.8 H 6.5 A 1.5,1.5 0 0 1 5,79.3 Z" fill="#E5EFF7"/>
-    <path id="holdout_wait_head" d="M 106.5,66.3 H 183.5 A 1.5,1.5 0 0 1 185,67.8 V 71.3 H 105 V 67.8 A 1.5,1.5 0 0 1 106.5,66.3 Z" fill="#E69F00"/>
-    <rect id="holdout_wait_body" x="105" y="71.3" width="80" height="9.5" rx="1.5" ry="1.5" fill="#FEFAF0" stroke="#E69F00" stroke-width="0.35" stroke-dasharray="1.6,1.2"/>
+  <!-- ======================= step 4: confirmatory test ======================= -->
+  <g id="layer_step4_frame" inkscape:label="40 step4 frame" inkscape:groupmode="layer">
+    <path id="confirm_head" d="M 6.5,84.4 H 183.5 A 1.5,1.5 0 0 1 185,85.9 V 90.0 H 5 V 85.9 A 1.5,1.5 0 0 1 6.5,84.4 Z" fill="#009E73"/>
+    <path id="confirm_body" d="M 5,90.0 H 185 V 97.5 A 1.5,1.5 0 0 1 183.5,99.0 H 6.5 A 1.5,1.5 0 0 1 5,97.5 Z" fill="#E0F4EE"/>
   </g>
-  <g id="layer_step3_text" inkscape:label="31 step3 text">
-    <text id="core_fit_head_text" x="45" y="69.7" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#FFFFFF">3  Fit the rule (core only)</text>
-    <text id="core_fit_l1" x="45" y="75.6" text-anchor="middle" fill="#1A1A1A">Leave-one-dataset-out (LODO)</text>
-    <!-- "alpha[pred] = g(rho[NN])", offsets from reportlab stringWidth, centred on column x=45 (total width 19.67mm -> start x=35.16):
-         "alpha" @2.8mm x=35.16; "pred" @2.1mm subscript x=37.01 (35.16+1.85); " = g(" @2.8mm x=41.83 (35.16+6.67);
-         "rho" @2.8mm x=48.82 (35.16+13.66); "NN" @2.1mm subscript x=50.60 (35.16+15.44); ")" @2.8mm x=53.74 (35.16+18.58).
-         Baseline y=79.3; subscript dy=+1.0 -> y=80.3. -->
-    <text id="core_fit_l2_a" x="35.16" y="79.3" text-anchor="start" fill="#1A1A1A">&#945;</text>
-    <text id="core_fit_l2_asub" x="37.01" y="80.3" text-anchor="start" font-size="2.1" fill="#1A1A1A">pred</text>
-    <text id="core_fit_l2_mid" x="41.83" y="79.3" text-anchor="start" xml:space="preserve" fill="#1A1A1A"> = g(</text>
-    <text id="core_fit_l2_rho" x="48.82" y="79.3" text-anchor="start" fill="#1A1A1A">&#961;</text>
-    <text id="core_fit_l2_rhosub" x="50.60" y="80.3" text-anchor="start" font-size="2.1" fill="#1A1A1A">NN</text>
-    <text id="core_fit_l2_close" x="53.74" y="79.3" text-anchor="start" fill="#1A1A1A">)</text>
-    <text id="holdout_wait_head_text" x="145" y="69.7" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#FFFFFF">3  Held out</text>
-    <!-- pause icon: two small bars, roughly centred across the two text lines below -->
-    <rect id="pause_bar1" x="118.5" y="73.3" width="1.6" height="5.0" fill="#E69F00"/>
-    <rect id="pause_bar2" x="121.3" y="73.3" width="1.6" height="5.0" fill="#E69F00"/>
-    <text id="holdout_wait_l1" x="146" y="75.6" text-anchor="middle" fill="#1A1A1A">Untouched until the</text>
-    <text id="holdout_wait_l2" x="146" y="79.3" text-anchor="middle" fill="#1A1A1A">confirmatory test below</text>
+  <g id="layer_step4_text" inkscape:label="41 step4 text" inkscape:groupmode="layer">
+    <text id="confirm_head_text" x="95" y="88.88" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">4  Confirmatory test &#8212; hold-out only</text>
+    <!-- "Apply alpha[pred] to the 19 hold-out datasets" contains a
+         subscript, hence anchored "start": the run widths sum to 85.86
+         units (stringWidth at 4.29 / 4.20), centred on x=95
+         -> x = 95 - 85.86/2 = 52.07 -->
+    <text id="confirm_body_text" x="52.07" y="96.06" xml:space="preserve" fill="#1A1A1A">Apply &#945;<tspan font-size="4.20" dy="1.3">pred</tspan><tspan dy="-1.3"> to the 19 hold-out datasets</tspan></text>
   </g>
 
-  <!-- ======================= convergence arrows: step3 -> step4 ======================= -->
-  <g id="layer_arrows_3_4" inkscape:label="32 arrows step3-4">
-    <line x1="45" y1="80.8" x2="45" y2="82.8" stroke="#757575" stroke-width="0.4"/>
-    <polygon points="43.7,82.8 46.3,82.8 45,84.3" fill="#757575"/>
-    <line x1="145" y1="80.8" x2="145" y2="82.8" stroke="#757575" stroke-width="0.4"/>
-    <polygon points="143.7,82.8 146.3,82.8 145,84.3" fill="#757575"/>
+  <!-- ======================= step 5: conclusions ======================= -->
+  <g id="layer_step5_frame" inkscape:label="50 step5 frame" inkscape:groupmode="layer">
+    <path id="conclusions_head" d="M 6.5,106.0 H 183.5 A 1.5,1.5 0 0 1 185,107.5 V 111.6 H 5 V 107.5 A 1.5,1.5 0 0 1 6.5,106.0 Z" fill="#CC79A7"/>
+    <path id="conclusions_body" d="M 5,111.6 H 185 V 119.1 A 1.5,1.5 0 0 1 183.5,120.6 H 6.5 A 1.5,1.5 0 0 1 5,119.1 Z" fill="#F9EDF4"/>
   </g>
-
-  <!-- ======================= step 4: confirmatory test (merge, full width) ======================= -->
-  <g id="layer_step4_frame" inkscape:label="40 step4 frame">
-    <path id="confirm_head" d="M 6.5,84.3 H 183.5 A 1.5,1.5 0 0 1 185,85.8 V 89.3 H 5 V 85.8 A 1.5,1.5 0 0 1 6.5,84.3 Z" fill="#009E73"/>
-    <path id="confirm_body" d="M 5,89.3 H 185 V 101.0 A 1.5,1.5 0 0 1 183.5,102.5 H 6.5 A 1.5,1.5 0 0 1 5,101.0 Z" fill="#E0F4EE"/>
-  </g>
-  <g id="layer_step4_text" inkscape:label="41 step4 text">
-    <text id="confirm_head_text" x="95" y="87.7" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#FFFFFF">4  Confirmatory test (hold-out only)</text>
-    <!-- "Apply alpha[pred] to the 19 independent hold-out datasets", centred on x=95 (total width 73.15mm -> start x=58.42):
-         "Apply alpha" @2.8mm x=58.42; "pred" @2.1mm subscript x=69.06 (58.42+10.64); rest @2.8mm x=73.88 (58.42+15.46).
-         Baseline y=93.7; subscript dy=+1.0 -> y=94.7. -->
-    <text id="confirm_l1_p1" x="58.42" y="93.7" text-anchor="start" fill="#1A1A1A">Apply &#945;</text>
-    <text id="confirm_l1_sub" x="69.06" y="94.7" text-anchor="start" font-size="2.1" fill="#1A1A1A">pred</text>
-    <text id="confirm_l1_p2" x="73.88" y="93.7" text-anchor="start" xml:space="preserve" fill="#1A1A1A"> to the 19 independent hold-out datasets</text>
-    <text id="confirm_l2" x="95" y="97.5" text-anchor="middle" fill="#1A1A1A">Pre-registered hypothesis families A1–A7</text>
-    <text id="confirm_l3" x="95" y="101.3" text-anchor="middle" fill="#1A1A1A">Holm-Bonferroni correction for multiple comparisons</text>
-  </g>
-
-  <!-- ======================= arrow: step4 -> step5 ======================= -->
-  <g id="layer_arrows_4_5" inkscape:label="42 arrows step4-5">
-    <line x1="95" y1="102.5" x2="95" y2="105.0" stroke="#757575" stroke-width="0.4"/>
-    <polygon points="93.7,105.0 96.3,105.0 95,106.3" fill="#757575"/>
-  </g>
-
-  <!-- ======================= step 5: conclusions (full width) ======================= -->
-  <g id="layer_step5_frame" inkscape:label="50 step5 frame">
-    <path id="conclusions_head" d="M 6.5,106.3 H 183.5 A 1.5,1.5 0 0 1 185,107.8 V 111.3 H 5 V 107.8 A 1.5,1.5 0 0 1 6.5,106.3 Z" fill="#CC79A7"/>
-    <path id="conclusions_body" d="M 5,111.3 H 185 V 118.7 A 1.5,1.5 0 0 1 183.5,120.2 H 6.5 A 1.5,1.5 0 0 1 5,118.7 Z" fill="#F9EDF4"/>
-  </g>
-  <g id="layer_step5_text" inkscape:label="51 step5 text">
-    <text id="conclusions_head_text" x="95" y="109.7" text-anchor="middle" font-size="3.0" font-weight="bold" fill="#FFFFFF">5  Conclusions</text>
-    <text id="conclusions_l1" x="95" y="115.6" text-anchor="middle" fill="#1A1A1A">Choice of embedding method = choice of what to preserve</text>
-    <!-- "The rule gives alpha[pred] for free: no extra embedding run", centred on x=95 (total width 74.45mm -> start x=57.78):
-         "The rule gives alpha" @2.8mm x=57.78; "pred" @2.1mm subscript x=80.32 (57.78+22.54); rest @2.8mm x=85.14 (57.78+27.36).
-         Baseline y=119.3; subscript dy=+1.0 -> y=120.3. -->
-    <text id="conclusions_l2_p1" x="57.78" y="119.3" text-anchor="start" fill="#1A1A1A">The rule gives &#945;</text>
-    <text id="conclusions_l2_sub" x="80.32" y="120.3" text-anchor="start" font-size="2.1" fill="#1A1A1A">pred</text>
-    <text id="conclusions_l2_p2" x="85.14" y="119.3" text-anchor="start" xml:space="preserve" fill="#1A1A1A"> for free: no extra embedding run</text>
+  <g id="layer_step5_text" inkscape:label="51 step5 text" inkscape:groupmode="layer">
+    <text id="conclusions_head_text" x="95" y="110.48" text-anchor="middle" font-size="4.60" font-weight="bold" fill="#FFFFFF">5  Conclusions</text>
+    <text id="conclusions_body_text" x="95" y="117.66" text-anchor="middle" fill="#1A1A1A">Choice of embedding method = choice of what to preserve</text>
   </g>
 
 </svg>

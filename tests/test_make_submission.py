@@ -392,7 +392,10 @@ def test_journal_stamp_lists_the_upload_map(tmp_path: Path) -> None:
     journal = ms.JOURNALS["dami"]
     ms._write_journal_stamp(tmp_path, journal, {})
     stamp = (tmp_path / ms.JOURNAL_STAMP_NAME).read_text(encoding="utf-8")
-    assert "https://dami.edmgr.com" in stamp
+    # The journal moved to Springer Nature Snapp; the stamp travels inside
+    # the uploaded package, so it must not send the author to the old system.
+    assert journal.submission_system in stamp
+    assert "edmgr" not in stamp
     assert "Regular Paper" in stamp
     for path_in_package, slot in journal.upload_slots:
         assert path_in_package in stamp

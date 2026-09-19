@@ -33,9 +33,11 @@ from src.common.config import get_mode_path, get_path
 from src.experiments.config_experiments import load_experiments_config
 from src.experiments.pareto_analysis import pareto_front_mask
 from src.figures.fig_common import (
+    ANNOTATION_FONT_PT,
+    LABEL_FONT_PT,
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
-    WIDTH_SINGLE_COL_IN,
+    WIDTH_SUPPLEMENT_FULL_IN,
     add_quick_arg,
     display_label,
     mode_data_dir,
@@ -74,6 +76,47 @@ _SAMMON_ZOOM_METHODS = ["sammon_alpha0_smacof", "sammon_alpha_smacof", "sammon_a
 # external package (adjustText is not installed in venv)
 _LABEL_OFFSETS = [(3, 3), (3, -9), (-24, 3), (-24, -9), (3, 11), (-24, 11), (3, -16), (-24, -16)]
 
+# 2026-09-19 (supplement font-size fix): at the bigger ANNOTATION_FONT_PT
+# (7.4pt, up from 4.5pt) the generic cyclic `_LABEL_OFFSETS` above placed two
+# pairs of labels on top of each other in the zoom inset - sammon_alpha2_smacof
+# and sammon_alpha_smacof's labels both landed in the gap BETWEEN the two
+# points (see results/tables/pareto_median_front.csv: sammon_alpha2_smacof
+# and sammon_alpha_auto are 0.0008 apart in stress at IDENTICAL auc_rnx;
+# mds/sammon_alpha0_smacof are 0.0002 apart in stress). These five
+# hand-tuned offsets (in points, at the actual data geometry) point each
+# label away from its nearest neighbor instead of at a fixed clock position.
+_ZOOM_LABEL_OFFSETS = {
+    # 2026-09-19 fix: the first attempt pointed the top pair's leftmost two
+    # labels UP - at ANNOTATION_FONT_PT that put them above the inset box's
+    # own top border, where they collided with the MAIN panel's "TriMap"
+    # label (an unrelated point the inset's connector lines happen to pass
+    # near - see mark_inset below). All three top-pair labels now point
+    # DOWN, into the empty band between the top and bottom point pairs,
+    # staggered by `dy` so the three (different lengths, different `x`)
+    # do not stack on top of each other.
+    "sammon_alpha_smacof": (-4, -11),    # leftmost of the top pair -> label down-left
+    "sammon_alpha2_smacof": (2, -24),    # middle of the top pair -> label further down (stagger vs. the other two)
+    "sammon_alpha_auto": (5, -11),       # rightmost of the top pair -> label down-right (away from the other two)
+    # 2026-09-19 fix: pointing the bottom pair's labels DOWN-RIGHT (the
+    # first attempt) ran off the inset's right edge and collided with the
+    # main panel's own "PHATE"/"MDS (scikit-learn)" labels, which sit just
+    # outside the inset at almost the same spot - both now point LEFT
+    # (away from the crowded right edge) with `ha="right"` (see
+    # `_plot_panel`) so the text ends AT the marker instead of starting there.
+    "mds": (-6, 8),                      # top of the bottom pair -> label up-left
+    "sammon_alpha0_smacof": (-6, -9),    # bottom of the bottom pair -> label down-left
+}
+
+# Short aliases (this zoom inset only - the full names above are still used
+# in the main panel and everywhere else): "Kamada-Kawai" alone is 12
+# characters and, together with its own offset landing close to
+# "Sammon ($\alpha=1$)", was the main remaining source of overlap even after
+# the offset fix above; "MDS (scikit-learn)" ran off the panel's right edge.
+_ZOOM_LABEL_SHORT = {
+    "sammon_alpha2_smacof": r"K.-Kawai ($\alpha=2$)",
+    "mds": "MDS (sklearn)",
+}
+
 
 def _style(method: str) -> tuple[str, str]:
     return _FAMILY_STYLE.get(method, _DEFAULT_STYLE)
@@ -82,7 +125,11 @@ def _style(method: str) -> tuple[str, str]:
 def _plot_panel(
     ax, sub: pd.DataFrame, front_mask: pd.Series, label_points: bool, fontsize: float,
     skip_label_methods: frozenset[str] = frozenset(),
+    label_offsets: dict[str, tuple[float, float]] | None = None,
+    label_overrides: dict[str, str] | None = None,
 ) -> None:
+    label_offsets = label_offsets or {}
+    label_overrides = label_overrides or {}
     for k, (method_name, row) in enumerate(sub.set_index("method").iterrows()):
         color, marker = _style(method_name)
         on_front = bool(front_mask.get(method_name, False))
@@ -92,10 +139,18 @@ def _plot_panel(
             linewidths=0.6 if on_front else 0.0, zorder=3 if on_front else 2, rasterized=True,
         )
         if label_points and method_name not in skip_label_methods:
-            dx, dy = _LABEL_OFFSETS[k % len(_LABEL_OFFSETS)]
+            is_custom = method_name in label_offsets
+            dx, dy = label_offsets.get(method_name, _LABEL_OFFSETS[k % len(_LABEL_OFFSETS)])
+            text = label_overrides.get(method_name, display_label(method_name, "method"))
+            # Custom (hand-tuned) offsets anchor the text AT the marker
+            # instead of starting there (matplotlib's annotate default,
+            # ha="left") - a negative dx means "label to the left", which
+            # should end at the point (ha="right"), not start there and run
+            # further left/off the panel.
+            ha = ("right" if dx < 0 else "left") if is_custom else "left"
             ax.annotate(
-                display_label(method_name, "method"), (row["stress_scale_invariant"], row["auc_rnx"]), fontsize=fontsize,
-                xytext=(dx, dy), textcoords="offset points",
+                text, (row["stress_scale_invariant"], row["auc_rnx"]), fontsize=fontsize,
+                xytext=(dx, dy), textcoords="offset points", ha=ha,
             )
 
 
@@ -118,15 +173,21 @@ def main() -> None:
     main_methods: list[str] = exp_cfg["report"]["main_methods"]
 
     # --- main panel: medians over 32 datasets (report.main_methods) --------
-    fig, ax = plt.subplots(figsize=(WIDTH_SINGLE_COL_IN, WIDTH_SINGLE_COL_IN * 0.9))
+    # 2026-09-19 (supplement font-size fix): this panel is embedded ONLY in
+    # the supplement (clanek_en/supplement/sections/s3_negative_results.tex,
+    # [width=\columnwidth]) - drawn at WIDTH_SUPPLEMENT_FULL_IN (390pt, see
+    # fig_common.py) so that embed is a no-op scale, instead of the literal
+    # WIDTH_SINGLE_COL_IN (255.12pt) that left a 1.53x LaTeX enlargement on
+    # top of an already-too-small inset-zoom fontsize= (4.5pt).
+    fig, ax = plt.subplots(figsize=(WIDTH_SUPPLEMENT_FULL_IN, WIDTH_SUPPLEMENT_FULL_IN * 0.75))
     front_mask_main = median_front.set_index("method")["on_front"]
     # S2 tweak: members of the Sammon family (+mds) are labeled only in the
     # inset zoom (see below) - in the main panel their labels would just
     # clutter the area where the zoom frame is already drawn.
-    _plot_panel(ax, median_front, front_mask_main, label_points=True, fontsize=5.5, skip_label_methods=frozenset(_SAMMON_ZOOM_METHODS))
+    _plot_panel(ax, median_front, front_mask_main, label_points=True, fontsize=ANNOTATION_FONT_PT, skip_label_methods=frozenset(_SAMMON_ZOOM_METHODS))
     ax.set_xlabel("stress (scale-invariant, lower = better)")
     ax.set_ylabel("AUC$_{RNX}$ (higher = better)")
-    ax.set_title("Pareto front: global fidelity vs. local neighborhood ranking\n(median over 32 datasets, E1)", fontsize=7)
+    ax.set_title("Pareto front: global fidelity vs. local neighborhood ranking\n(median over 32 datasets, E1)", fontsize=LABEL_FONT_PT)
 
     # S2 tweak: an inset zoom of the bottom-left corner, where members of
     # the Sammon family (+mds) cluster - in the main panel their labels are
@@ -137,12 +198,15 @@ def main() -> None:
         xs, ys = zoom_sub["stress_scale_invariant"], zoom_sub["auc_rnx"]
         pad_x = max((xs.max() - xs.min()) * 0.35, xs.max() * 0.02, 1e-6)
         pad_y = max((ys.max() - ys.min()) * 0.35, ys.max() * 0.02, 1e-6)
-        axins = inset_axes(ax, width="48%", height="48%", loc="lower right", borderpad=1.4)
+        axins = inset_axes(ax, width="40%", height="42%", loc="lower right", borderpad=1.6)
         zoom_front_mask = front_mask_main[front_mask_main.index.isin(_SAMMON_ZOOM_METHODS)]
-        _plot_panel(axins, zoom_sub, zoom_front_mask, label_points=True, fontsize=4.5)
+        _plot_panel(
+            axins, zoom_sub, zoom_front_mask, label_points=True, fontsize=ANNOTATION_FONT_PT,
+            label_offsets=_ZOOM_LABEL_OFFSETS, label_overrides=_ZOOM_LABEL_SHORT,
+        )
         axins.set_xlim(xs.min() - pad_x, xs.max() + pad_x)
         axins.set_ylim(ys.min() - pad_y, ys.max() + pad_y)
-        axins.tick_params(labelsize=4.5)
+        axins.tick_params(labelsize=ANNOTATION_FONT_PT)
         axins.set_xlabel("")
         axins.set_ylabel("")
         mark_inset(ax, axins, loc1=2, loc2=3, fc="none", ec="0.5", linewidth=0.5)

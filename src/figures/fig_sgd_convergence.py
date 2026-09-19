@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import matplotlib.pyplot as plt
 
-from src.figures.fig_common import OKABE_ITO, WIDTH_SINGLE_COL_IN, add_quick_arg, display_label, mode_data_dir, parse_fig_mode, require_csv, save_csv_alongside, save_figure
+from src.figures.fig_common import ANNOTATION_FONT_PT, LABEL_FONT_PT, OKABE_ITO, WIDTH_SUPPLEMENT_FULL_IN, add_quick_arg, display_label, mode_data_dir, parse_fig_mode, require_csv, save_csv_alongside, save_figure
 
 FIG_NAME = "fig_sgd_convergence"
 
@@ -41,7 +41,14 @@ def main() -> None:
     df = require_csv(curves_path, f"venv\\python.exe -m src.experiments.exp2_solver_scaling --{mode}")
 
     datasets = sorted(df["dataset"].unique())
-    fig, axes = plt.subplots(1, len(datasets), figsize=(WIDTH_SINGLE_COL_IN * len(datasets), WIDTH_SINGLE_COL_IN * 0.85), squeeze=False)
+    # 2026-09-19 (supplement font-size fix): this figure is embedded ONLY in
+    # the supplement (clanek_en/supplement/sections/s3_negative_results.tex,
+    # [width=\columnwidth]) - drawn at WIDTH_SUPPLEMENT_FULL_IN (390pt, see
+    # fig_common.py) so that embed is a no-op scale, instead of
+    # WIDTH_SINGLE_COL_IN*len(datasets) (510.24pt for 2 datasets) which was
+    # actually WIDER than the 390pt target and left a 0.76x LaTeX SHRINK on
+    # top of an already-too-small legend fontsize= (6pt).
+    fig, axes = plt.subplots(1, len(datasets), figsize=(WIDTH_SUPPLEMENT_FULL_IN, WIDTH_SUPPLEMENT_FULL_IN / len(datasets) * 0.85), squeeze=False)
 
     solver_colors = {"sgd_naive": OKABE_ITO[6], "sgd_stab": OKABE_ITO[5]}
     for ax_idx, dataset_name in enumerate(datasets):
@@ -57,10 +64,10 @@ def main() -> None:
         ax.set_xlabel("epoch")
         if ax_idx == 0:
             ax.set_ylabel("scale-invariant stress (log)")
-        ax.set_title(f"{display_label(dataset_name, 'dataset')} (seed={seed0})", fontsize=8)
-        ax.legend(fontsize=6)
+        ax.set_title(f"{display_label(dataset_name, 'dataset')} (seed={seed0})", fontsize=LABEL_FONT_PT)
+        ax.legend(fontsize=ANNOTATION_FONT_PT)
 
-    fig.suptitle("SGD convergence: naive vs. stabilized", fontsize=9)
+    fig.suptitle("SGD convergence: naive vs. stabilized", fontsize=LABEL_FONT_PT + 1)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     save_figure(fig, FIG_NAME)
     save_csv_alongside(df, FIG_NAME)

@@ -75,6 +75,8 @@ from matplotlib.patches import Patch
 from src.common.config import get_mode_path
 from src.experiments.config_experiments import load_experiments_config
 from src.figures.fig_common import (
+    ANNOTATION_FONT_PT,
+    LABEL_FONT_PT,
     OKABE_ITO,
     WIDTH_FULL_WIDTH_IN,
     add_quick_arg,
@@ -145,7 +147,7 @@ def _draw_panel(ax, sub: pd.DataFrame, reference_method: str) -> None:
 
     labels = [display_label(m, kind="method") + (" (reference)" if m == reference_method else "") for m in sub["method"]]
     ax.set_yticks(y)
-    ax.set_yticklabels(labels, fontsize=6)
+    ax.set_yticklabels(labels, fontsize=ANNOTATION_FONT_PT)
     ax.set_ylim(-0.6, len(sub) - 0.4)
     ax.invert_yaxis()
 
@@ -153,11 +155,11 @@ def _draw_panel(ax, sub: pd.DataFrame, reference_method: str) -> None:
         label = f"{100.0 * row['error_rate']:.0f}%"
         if row["reject_mcnemar_holm_vs_reference"]:
             label += " *"
-        ax.text(row["error_rate"] + 0.015, yi, label, va="center", ha="left", fontsize=6, zorder=4)
+        ax.text(row["error_rate"] + 0.015, yi, label, va="center", ha="left", fontsize=ANNOTATION_FONT_PT, zorder=4)
 
     ax.set_xlim(0.0, 1.0)
-    ax.set_xlabel("Error rate (wrong-answer share)", fontsize=6.5)
-    ax.tick_params(axis="x", labelsize=6)
+    ax.set_xlabel("Error rate (wrong-answer share)", fontsize=LABEL_FONT_PT)
+    ax.tick_params(axis="x", labelsize=ANNOTATION_FONT_PT)
     ax.grid(axis="x", color="#dddddd", linewidth=0.5, zorder=0)
 
 
@@ -182,11 +184,18 @@ def main() -> None:
 
     plot_df = build_plot_table(summary, pairwise, main_methods, neighbor_methods, reference_method)
 
-    fig, axes = plt.subplots(1, 2, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.70))
+    # 2026-09-19 (font-size fix): switched from 1x2 (side by side) to 2x1
+    # (stacked) - at ANNOTATION_FONT_PT/LABEL_FONT_PT on the printed
+    # \textwidth (372pt), the method-name y-tick labels of a HALF-width
+    # panel (e.g. "alpha-Sammon (predicted) (reference)") no longer fit
+    # without colliding with the neighboring panel; a full-width panel gives
+    # each question its own full row of y-tick-label room (task guidance:
+    # change the panel layout rather than shrink text below the floor).
+    fig, axes = plt.subplots(2, 1, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 1.30), constrained_layout=True)
     for ax, question in zip(axes, DISCOVERY_QUESTIONS):
         sub = plot_df[plot_df["question"] == question]
         _draw_panel(ax, sub, reference_method)
-        ax.set_title(display_label(question, kind="question"), fontsize=8)
+        ax.set_title(display_label(question, kind="question"), fontsize=LABEL_FONT_PT)
 
     legend_handles = [
         Patch(facecolor=_STRESS_COLOR, edgecolor="none", label="Distance-preserving methods (MDS / PCA / $\\alpha$-Sammon variants)"),
@@ -194,9 +203,13 @@ def main() -> None:
         Patch(facecolor="white", edgecolor=_REFERENCE_EDGE_COLOR, linewidth=_REFERENCE_EDGE_WIDTH, label=display_label(reference_method, kind="method") + " (reference for the significance test)"),
         Patch(facecolor="white", edgecolor="white", label=f"* significant vs. reference (McNemar, Holm-adjusted $p<{alpha:g}$)"),
     ]
-    fig.suptitle("E15 discovery task: error rate never reaches zero, stress-family bars are mutually indistinguishable", fontsize=7.5, y=0.98)
-    fig.subplots_adjust(top=0.84, bottom=0.30, left=0.24, right=0.97, wspace=0.75)
-    fig.legend(handles=legend_handles, loc="lower center", ncol=1, fontsize=6, frameon=False, bbox_to_anchor=(0.5, 0.05))
+    # 2026-09-19 (font-size fix): title fontsize LABEL_FONT_PT+1 (was 7.5,
+    # below the floor). Layout switched to constrained_layout (see the 2x1
+    # subplots call above) so panel/label/legend spacing is solved from
+    # actual bounding boxes instead of hand-tuned fractions that no longer
+    # fit once every fontsize grew to clear the Springer floor.
+    fig.suptitle("E15 discovery task: error rate never reaches zero, stress-family bars are mutually indistinguishable", fontsize=LABEL_FONT_PT + 1)
+    fig.legend(handles=legend_handles, loc="outside lower center", ncol=1, fontsize=LABEL_FONT_PT, frameon=False)
     save_figure(fig, FIG_NAME)
     save_csv_alongside(plot_df, FIG_NAME)
 

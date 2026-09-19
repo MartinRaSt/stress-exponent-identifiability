@@ -187,14 +187,12 @@ JOURNALS: dict[str, JournalProfile] = {
         key="dami",
         name="Data Mining and Knowledge Discovery",
         publisher="Springer",
-        submission_system="https://dami.edmgr.com",
+        submission_system="https://submission.springernature.com/new-submission/10618/3",
         article_type="Regular Paper",
         manuscript_class="sn-jnl (option sn-basic)",
         upload_slots=(
-            ("manuscript_en/main_dami.pdf", "Manuscript (PDF)"),
-            ("manuscript_en/ (all files)", "LaTeX source files"),
-            ("supplement_en/supplement.pdf", "Supplementary Information"),
-            ("supplement_en/ (all files)", "Supplementary source files"),
+            ("manuscript_en.zip", "Manuscript (LaTeX sources; Snapp compiles them)"),
+            ("supplement_en.zip", "Online Resource 1 (supplementary material)"),
         ),
     ),
 }
@@ -720,7 +718,11 @@ def compile_and_verify(
 # .log or .aux in that upload is at best noise and at worst a reviewer
 # reading our local paths. The .bbl is deliberately NOT in this list -
 # Springer wants it, because the editorial system does not run BibTeX.
-VERIFICATION_ARTIFACT_SUFFIXES = (".aux", ".log", ".blg", ".out", ".synctex.gz")
+# .spl is an elsarticle by-product that travels with the sources; it has
+# no business in an archive handed to the publisher.
+VERIFICATION_ARTIFACT_SUFFIXES = (
+    ".aux", ".log", ".blg", ".out", ".spl", ".synctex.gz",
+)
 
 
 def _clean_verification_artifacts(flat_dir: Path, *, keep: frozenset[str]) -> list[str]:
@@ -790,7 +792,7 @@ def _write_journal_stamp(
         f"article type: {journal.article_type}",
         f"manuscript class: {journal.manuscript_class}",
         "",
-        "Upload map (Editorial Manager item type for each file):",
+        "Upload map (what to hand the submission system):",
     ]
     for path_in_package, slot in journal.upload_slots:
         lines.append(f"  {path_in_package}  ->  {slot}")

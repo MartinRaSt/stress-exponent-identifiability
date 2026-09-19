@@ -25,10 +25,15 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from src.experiments.exp_common import resolve_experiment_name
-from src.figures.fig_common import OKABE_ITO, WIDTH_SINGLE_COL_IN, add_quick_arg, display_label, parse_fig_mode, require_experiment_csv, save_csv_alongside, save_figure
+from src.figures.fig_common import ANNOTATION_FONT_PT, LABEL_FONT_PT, OKABE_ITO, WIDTH_SUPPLEMENT_THREEQ_IN, add_quick_arg, display_label, parse_fig_mode, require_experiment_csv, save_csv_alongside, save_figure
 
 FIG_NAME = "fig_runtime_scaling"
 BASE_EXPERIMENT_NAME = "exp2_scaling"
+# 2026-09-19 proportions fix: 3 columns x 2 rows for the 6 solver/device
+# curves - fits the ~292pt supplement width without wrapping a "SMACOF (GPU
+# (CUDA))"-length label mid-word (checked visually, see the task's
+# pdftoppm requirement).
+_LEGEND_NCOL = 2
 
 
 def _solver_device_label(method_name: str) -> str:
@@ -58,18 +63,40 @@ def main() -> None:
     ok["n"] = ok["dataset"].str.extract(r"_n(\d+)$").astype(int)
     med = ok.groupby(["n", "method"])["wall_time_sec"].median().reset_index()
 
-    fig, ax = plt.subplots(figsize=(WIDTH_SINGLE_COL_IN, WIDTH_SINGLE_COL_IN * 0.85))
+    # 2026-09-19 (supplement font-size fix): this figure is embedded ONLY in
+    # the supplement (clanek_en/supplement/sections/s_solvers.tex,
+    # [width=0.75\columnwidth]) - drawn at WIDTH_SUPPLEMENT_THREEQ_IN
+    # (292.5pt, see fig_common.py) so that embed is a no-op scale, instead
+    # of the literal WIDTH_SINGLE_COL_IN (255.12pt) that left a 1.15x LaTeX
+    # enlargement on top of an already-too-small legend fontsize= (5.5pt).
+    # 2026-09-19 proportions fix (author feedback: "legenda je prilis velka
+    # vuci grafu" - the default in-axes ax.legend(loc="best") placed a
+    # 6-entry box ON TOP of the curves, since with 6 lines spanning most of
+    # the log-log plot there is no free corner left for "best" to pick).
+    # Moved OUTSIDE the axes, below the plot, in `_LEGEND_NCOL` compact
+    # columns at ANNOTATION_FONT_PT (the Springer floor, smaller than the
+    # LABEL_FONT_PT used everywhere else in this figure - a legend is
+    # non-data annotation, not an axis/tick/legend-of-record label) instead
+    # of covering data; constrained_layout reserves real, measured space
+    # for it (same approach as fig_temporal_pareto.py / fig_neighbor_survival.py).
+    fig, ax = plt.subplots(
+        figsize=(WIDTH_SUPPLEMENT_THREEQ_IN, WIDTH_SUPPLEMENT_THREEQ_IN * 1.05),
+        constrained_layout=True,
+    )
+    handles = []
+    labels = []
     for i, method_name in enumerate(sorted(med["method"].unique())):
         s = med[med["method"] == method_name].sort_values("n")
-        ax.plot(s["n"], s["wall_time_sec"], marker="o", markersize=3, linewidth=1.0, label=_solver_device_label(method_name), color=OKABE_ITO[i % len(OKABE_ITO)])
+        (line,) = ax.plot(s["n"], s["wall_time_sec"], marker="o", markersize=3, linewidth=1.0, label=_solver_device_label(method_name), color=OKABE_ITO[i % len(OKABE_ITO)])
+        handles.append(line)
+        labels.append(_solver_device_label(method_name))
 
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("n")
     ax.set_ylabel("wall-clock time [s] (median)")
-    ax.legend(fontsize=5.5, ncol=1)
-    ax.set_title(f"Runtime scaling (E2b, {display_label('gaussian_clusters', 'dataset')})", fontsize=8)
+    ax.set_title(f"Runtime scaling (E2b, {display_label('gaussian_clusters', 'dataset')})", fontsize=LABEL_FONT_PT)
+    fig.legend(handles, labels, loc="outside lower center", ncol=_LEGEND_NCOL, fontsize=ANNOTATION_FONT_PT, frameon=False)
 
-    fig.tight_layout()
     save_figure(fig, FIG_NAME)
     save_csv_alongside(med, FIG_NAME)
     print(f"{FIG_NAME}: {med['method'].nunique()} solvers/devices, n in {sorted(med['n'].unique())}.")

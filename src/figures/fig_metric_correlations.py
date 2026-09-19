@@ -57,10 +57,11 @@ import matplotlib.pyplot as plt
 
 from src.experiments.config_experiments import load_experiments_config
 from src.figures.fig_common import (
+    ANNOTATION_FONT_PT,
+    LABEL_FONT_PT,
     OKABE_ITO,
-    WIDTH_FULL_WIDTH_IN,
+    WIDTH_SUPPLEMENT_FULL_IN,
     add_quick_arg,
-    display_label,
     figures_out_dir,
     parse_fig_mode,
     require_experiment_csv,
@@ -69,6 +70,50 @@ from src.figures.fig_common import (
 )
 
 FIG_NAME = "fig_metric_correlations"
+
+# 2026-09-19 (supplement font-size fix): row/column tick labels for THIS
+# heatmap only - shortened aliases of the full `display_label(m, "metric")`
+# text (still used everywhere else: table headers, other figures). At
+# ANNOTATION_FONT_PT (7.4pt, up from the pre-fix 5.5pt) the full names (e.g.
+# "Centroid distance (Spearman)", "Neighborhood hit (k=7)") consumed most of
+# the 390pt supplement column width just for the left tick-label margin,
+# leaving individual matrix cells too narrow for their own "1.00"/".XX"
+# annotation text and causing it to bleed into the neighboring cell (see the
+# 2026-09-17 fix note in `_heatmap` for the annotation-threshold rationale
+# this narrowing does not affect). A metric missing from this table is a
+# config error (fail loud), not silently shown with its long name.
+_HEATMAP_TICK_LABEL_SHORT = {
+    "auc_rnx": "AUC$_{RNX}$",
+    "trustworthiness_k7": "Trustworth. (k7)",
+    "stress_scale_invariant": "Stress (SI)",
+    "q_global": "Q (global)",
+    "shepard_spearman_rho": "Shepard corr.",
+    "class_spread_spearman": "Class spread",
+    "centroid_dist_spearman": "Centroid dist.",
+    "wall_time_sec": "Wall time (s)",
+    "continuity_k7": "Continuity (k7)",
+    "knn_jaccard_k7": "kNN Jaccard (k7)",
+    "q_local": "Q (local)",
+    "distance_correlation": "Distance corr.",
+    "lcmc_k7": "LCMC (k7)",
+    "neighborhood_hit_k7": "Neighb. hit (k7)",
+    "kruskal_stress1": "Kruskal stress-1",
+}
+
+
+def _heatmap_tick_label(metric: str) -> str:
+    """Short tick-label alias for `metric` (see `_HEATMAP_TICK_LABEL_SHORT`
+    above) - fails loud if a metric in the config's `metrics` list has no
+    entry here (extend the table, do not fall back to the long name, which
+    would silently reintroduce the overflow this alias table exists to fix)."""
+    try:
+        return _HEATMAP_TICK_LABEL_SHORT[metric]
+    except KeyError as exc:
+        raise KeyError(
+            f"Metric '{metric}' has no short tick-label alias in fig_metric_correlations.py "
+            "_HEATMAP_TICK_LABEL_SHORT - add one (the full display_label() text is too wide "
+            "for this heatmap's tick-label margin at ANNOTATION_FONT_PT)."
+        ) from exc
 
 
 def _config() -> dict:
@@ -197,8 +242,10 @@ def _heatmap(ax, rho: pd.DataFrame, title: str, annotate_threshold: float, show_
     `redundancy_threshold` used elsewhere in this script to flag
     practically-interchangeable metric pairs (no separate magic number) -
     every other value is still exactly recoverable from the CSV saved
-    alongside this figure. Tick labels go through the shared
-    `display_label(..., "metric")` so no raw column name reaches the axis.
+    alongside this figure. Tick labels go through `_heatmap_tick_label`
+    (a short, this-figure-only alias of the shared `display_label(...,
+    "metric")` - see the module-level comment) so no raw column name
+    reaches the axis.
 
     Author feedback 2026-09-17 ("one X axis is enough for the correlations"): all three
     panels share the same metric order on x, so the x tick labels are only
@@ -211,22 +258,31 @@ def _heatmap(ax, rho: pd.DataFrame, title: str, annotate_threshold: float, show_
     # canvas blank when the 3 panels were stacked vertically) gives much
     # larger, more legible cells for the same figure width.
     im = ax.imshow(data, vmin=-1.0, vmax=1.0, cmap="RdBu_r", aspect="auto")
-    labels = [display_label(m, "metric") for m in rho.columns]
+    labels = [_heatmap_tick_label(m) for m in rho.columns]
     ax.set_xticks(range(len(rho)))
     ax.set_yticks(range(len(rho)))
     if show_xticklabels:
-        ax.set_xticklabels(labels, rotation=90, fontsize=5.5)
+        ax.set_xticklabels(labels, rotation=90, fontsize=ANNOTATION_FONT_PT)
     else:
         ax.set_xticklabels([])
-    ax.set_yticklabels(labels, fontsize=5.5)
-    ax.set_title(title, fontsize=7.5)
+    ax.set_yticklabels(labels, fontsize=ANNOTATION_FONT_PT)
+    ax.set_title(title, fontsize=LABEL_FONT_PT)
     for i in range(len(rho)):
         for j in range(len(rho)):
+            if i == j:
+                # 2026-09-19 (supplement font-size fix): the diagonal
+                # (a metric's correlation with itself) is trivially 1.00 and
+                # already conveyed by the darkest color cell - skipping its
+                # text gives the two ADJACENT off-diagonal cells (very
+                # commonly also above annotate_threshold, e.g. neighboring
+                # stress-family metrics) breathing room instead of three
+                # consecutive populated, narrow cells bleeding together.
+                continue
             value = data[i, j]
             if np.isnan(value) or abs(value) < annotate_threshold:
                 continue
             ax.text(j, i, f"{value:.2f}".replace("0.", "."), ha="center", va="center",
-                    fontsize=4.2, color="white" if abs(value) > 0.6 else "black")
+                    fontsize=ANNOTATION_FONT_PT, color="white" if abs(value) > 0.6 else "black")
     return im
 
 
@@ -277,8 +333,17 @@ def main() -> None:
     # labels are only drawn once, on the bottom panel (author feedback
     # 2026-09-17: "korelace staci jen jedna osa X" - repeating them 3x
     # wasted vertical space the article needs elsewhere).
+    # 2026-09-19 (supplement font-size fix): this figure is embedded ONLY in
+    # the supplement (clanek_en/supplement/sections/s6_full_tables.tex,
+    # [width=\columnwidth]) - drawn at WIDTH_SUPPLEMENT_FULL_IN (390pt, see
+    # fig_common.py) so that embed is a no-op scale, instead of the
+    # DAMI-sized WIDTH_FULL_WIDTH_IN (372pt) that used to leave a small
+    # LaTeX rescale on top of already-too-small tick/annotation fontsize=
+    # values (5.5pt/4.2pt). Height ratio raised 0.85->1.35 so the 15x15
+    # metric grid gets taller cells at the bigger ANNOTATION_FONT_PT tick
+    # labels.
     fig, axes = plt.subplots(
-        3, 1, figsize=(WIDTH_FULL_WIDTH_IN, WIDTH_FULL_WIDTH_IN * 0.85), constrained_layout=True, sharex=True,
+        3, 1, figsize=(WIDTH_SUPPLEMENT_FULL_IN, WIDTH_SUPPLEMENT_FULL_IN * 1.35), constrained_layout=True, sharex=True,
     )
     titles = {"all": "All methods", "stress": "Stress family", "neighbor": "Neighbour methods"}
     family_order = ["all", "stress", "neighbor"]
