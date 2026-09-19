@@ -2219,6 +2219,121 @@ def _add_exp15_discovery_task_numbers(mc: MacroCollector, data_dir: Path, tables
     mc.try_block("exp15 discovery task: Holm-adjusted McNemar p-values (alpha_pred vs t-SNE/UMAP) and significant-baseline counts", block_pairwise)
 
 
+def _add_n_max_methodology_config_numbers(mc: MacroCollector, mode: str) -> None:
+    """n_max caps cited by the new subsampling paragraph of the methodology
+    (reserse/2026-09-19_obsahove_nalezy_pred_podanim.md section 2) - read
+    DIRECTLY from config_experiments.yaml so the paragraph stays true after a
+    config change; never hardcode the values here. Fail-loud: a missing key,
+    a missing hold-out override, or a mismatch between two caps that the
+    article claims are equal raises (the whole group is then skipped by
+    `try_block`, which shows up as an undefined-macro LaTeX error rather than
+    a silently wrong number)."""
+
+    def block() -> None:
+        e1_cfg = resolve_experiment_config("exp1_dr_benchmark", mode)
+        n_max_train = int(e1_cfg["n_max"])
+        mc.add("expOneNMaxTrain", n_max_train, "config_experiments.yaml, exp1_dr_benchmark.n_max")
+
+        holdout_datasets = set(e1_cfg["datasets_holdout"])
+        overrides: dict[str, int] = e1_cfg["n_max_overrides"]
+        missing = holdout_datasets - set(overrides.keys())
+        if missing:
+            raise KeyError(
+                f"exp1_dr_benchmark.n_max_overrides is missing an entry for hold-out dataset(s) {sorted(missing)} "
+                "in config_experiments.yaml - every hold-out dataset must have an explicit n_max override."
+            )
+        holdout_caps = {overrides[name] for name in holdout_datasets}
+        if len(holdout_caps) != 1:
+            raise ValueError(
+                f"exp1_dr_benchmark.n_max_overrides gives {len(holdout_caps)} distinct caps for the "
+                f"{len(holdout_datasets)} hold-out datasets ({sorted(holdout_caps)}) - the methodology paragraph "
+                "claims a single shared n_max for all of them."
+            )
+        n_max_holdout = int(next(iter(holdout_caps)))
+        mc.add(
+            "expOneNMaxHoldout", n_max_holdout,
+            f"config_experiments.yaml, exp1_dr_benchmark.n_max_overrides, common value over the {len(holdout_datasets)} hold-out datasets in exp1_dr_benchmark.datasets_holdout",
+        )
+
+        exp6_cfg = resolve_experiment_config("exp6_alpha_curves", mode)
+        n_max_exp6 = int(exp6_cfg["n_max"])
+        if n_max_exp6 != n_max_holdout:
+            raise ValueError(
+                f"exp6_alpha_curves.n_max ({n_max_exp6}) != the hold-out cap of exp1_dr_benchmark ({n_max_holdout}) - "
+                "the methodology paragraph claims the alpha-grid curves of Experiment 6 (on which the rule is "
+                "fitted) use the same cap as the Experiment 1 hold-out datasets."
+            )
+        mc.add(
+            "expSixNMax", n_max_exp6,
+            "config_experiments.yaml, exp6_alpha_curves.n_max (asserted equal to expOneNMaxHoldout)",
+        )
+
+        # Hold-out screening (screen_regime_candidates.n_max) is claimed in
+        # the same sentence to reuse the same cap; no separate macro is
+        # cited in the prose (see reserse), but the equality is checked here
+        # so the claim cannot silently go stale.
+        screen_cfg = resolve_experiment_config("screen_regime_candidates", mode)
+        n_max_screen = int(screen_cfg["n_max"])
+        if n_max_screen != n_max_holdout:
+            raise ValueError(
+                f"screen_regime_candidates.n_max ({n_max_screen}) != the hold-out cap of exp1_dr_benchmark "
+                f"({n_max_holdout}) - the methodology paragraph claims the hold-out screening reuses that cap."
+            )
+
+        exp7_cfg = resolve_experiment_config("exp7_rank_weights", mode)
+        mc.add("expSevenNMax", int(exp7_cfg["n_max"]), "config_experiments.yaml, exp7_rank_weights.n_max")
+
+        exp10_cfg = resolve_experiment_config("exp10_identifiability_check", mode)
+        mc.add(
+            "expTenNMaxHessian", int(exp10_cfg["n_max_hessian"]),
+            "config_experiments.yaml, exp10_identifiability_check.n_max_hessian",
+        )
+
+    mc.try_block("n_max methodology paragraph: config caps (E1/E6/screening/E7/E10 Hessian)", block)
+
+
+def _add_n_max_methodology_dataset_numbers(mc: MacroCollector, data_dir: Path, mode: str) -> None:
+    """Counts derived from `dataset_properties.csv` for the same paragraph:
+    how many of the Experiment 1 TRAINING datasets actually hit the
+    `exp1_dr_benchmark.n_max` cap, and the largest natural size among the
+    rest (below the cap). Restricted to `exp1_dr_benchmark.datasets` (the
+    training/core list) - hold-out datasets are a disjoint set and must not
+    be counted here."""
+
+    def block() -> None:
+        e1_cfg = resolve_experiment_config("exp1_dr_benchmark", mode)
+        n_max_train = int(e1_cfg["n_max"])
+        core_datasets = set(e1_cfg["datasets"])
+
+        props = _read_csv_required(data_dir / "dataset_properties.csv")
+        vector = props[props["kind"] == "vector"]
+        train_props = vector[vector["dataset"].isin(core_datasets)]
+        missing = core_datasets - set(train_props["dataset"])
+        if missing:
+            raise ValueError(
+                f"dataset_properties.csv (kind=='vector') is missing {len(missing)} of the "
+                f"{len(core_datasets)} exp1_dr_benchmark.datasets training datasets: {sorted(missing)}."
+            )
+        if train_props["dataset"].duplicated().any():
+            raise ValueError("dataset_properties.csv (kind=='vector') has duplicate rows for a training dataset.")
+
+        at_cap = train_props[train_props["n"] == n_max_train]
+        mc.add(
+            "numTrainDatasetsAtCap", int(at_cap.shape[0]),
+            f"dataset_properties.csv (kind=vector, dataset in exp1_dr_benchmark.datasets), count of n==exp1_dr_benchmark.n_max ({n_max_train})",
+        )
+
+        below_cap = train_props[train_props["n"] < n_max_train]
+        if below_cap.empty:
+            raise ValueError("All exp1_dr_benchmark training datasets are at the n_max cap - no dataset is below it.")
+        mc.add(
+            "maxNaturalNTrainBelowCap", int(below_cap["n"].max()),
+            "dataset_properties.csv (kind=vector, dataset in exp1_dr_benchmark.datasets), max(n) over datasets with n < exp1_dr_benchmark.n_max",
+        )
+
+    mc.try_block("n_max methodology paragraph: training datasets at/below the Experiment 1 cap", block)
+
+
 def build_numbers_tex(mode: str = "full") -> tuple[str, int]:
     """Builds the content of numbers.tex for a given mode. Returns (text, number_of_generated_macros)."""
     logger = get_logger(MODULE_NAME, mode=mode)
@@ -2270,6 +2385,8 @@ def build_numbers_tex(mode: str = "full") -> tuple[str, int]:
         lambda: _add_exp13_neighbor_survival_numbers(mc, tables_dir),
         lambda: _add_exp14_convergence_robustness_numbers(mc, data_dir),
         lambda: _add_exp15_discovery_task_numbers(mc, data_dir, tables_dir),
+        lambda: _add_n_max_methodology_config_numbers(mc, mode),
+        lambda: _add_n_max_methodology_dataset_numbers(mc, data_dir, mode),
     ]
     for fn in groups:
         fn()

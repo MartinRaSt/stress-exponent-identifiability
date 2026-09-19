@@ -150,6 +150,25 @@ def _log_expected_value_check(logger, median_front: set[str], per_dataset_counts
         logger.info("K3 check: sammon_alpha_auto never dominated by a neighbor method - OK (matches the review).")
 
 
+def n_datasets_total_from_summary(summary: pd.DataFrame) -> int:
+    """Number of datasets entering the Pareto analysis, read from the
+    per-method summary's `n_datasets_total` column (never a hardcoded
+    literal - author feedback 2026-09-19, validator finding B3: the caption
+    of `pareto_summary.tex` used to say "32 datasets" while the table body
+    held 51). Every method must have exactly one median row per dataset, so
+    the column must be constant across methods; a differing value means a
+    dataset x method combination is silently missing and must fail loudly
+    instead of being captioned over with a stale number."""
+    values = summary["n_datasets_total"].unique()
+    if len(values) != 1:
+        raise ValueError(
+            "pareto_analysis: n_datasets_total is not the same for every method "
+            f"(values: {sorted(values)}); at least one method is missing a dataset "
+            "in exp1_dr_benchmark_results.csv - see pareto_membership.csv."
+        )
+    return int(values[0])
+
+
 def main() -> None:
     import argparse
 
@@ -216,12 +235,14 @@ def main() -> None:
         summary_rows.append(row)
     summary = pd.DataFrame(summary_rows).sort_values("n_datasets_on_front_auc_stress", ascending=False).reset_index(drop=True)
 
+    n_datasets_total = n_datasets_total_from_summary(summary)
+
     tables_dir = get_tables_dir(mode)
     summary_csv = tables_dir / "pareto_summary.csv"
     summary.to_csv(summary_csv, index=False)
     write_booktabs_tex(
         summary, tables_dir / "pareto_summary.tex",
-        caption="Pareto front membership per method (E1, 32 datasets)", label="tab:pareto_summary",
+        caption=f"Pareto front membership per method (E1, {n_datasets_total} datasets)", label="tab:pareto_summary",
         comment_lines=["source: results/data/exp1_dr_benchmark_results.csv + pareto_membership.csv, see pareto_analysis.py"],
     )
     logger.info("Written: %s (%d methods).", summary_csv, summary.shape[0])

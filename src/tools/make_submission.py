@@ -92,6 +92,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -928,6 +929,35 @@ def run(
     return verified
 
 
+def write_package_zip(package_dir: Path) -> Path:
+    """Zips one flat package directory for Springer Nature SNAPP, which takes
+    the LaTeX sources as a single archive and compiles them itself. Entries are
+    stored at the root of the archive (no wrapping directory): SNAPP looks for
+    the main .tex there. Files are added in sorted order so that two runs over
+    the same directory produce the same archive layout."""
+    if not package_dir.is_dir():
+        raise SubmissionBuildError(
+            f"Cannot zip {package_dir}: the package directory does not exist. "
+            "Build the package first."
+        )
+    zip_path = package_dir.with_suffix(".zip")
+    members = sorted(
+        path
+        for path in package_dir.iterdir()
+        if path.is_file() and path.suffix.lower() != ".zip"
+    )
+    if not members:
+        raise SubmissionBuildError(f"Cannot zip {package_dir}: no files in it.")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for member in members:
+            archive.write(member, arcname=member.name)
+    print(
+        f"[make_submission] Wrote {zip_path} ({len(members)} files, "
+        f"{zip_path.stat().st_size // 1024} kB)."
+    )
+    return zip_path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -953,6 +983,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Which package(s) to build (default: both).",
     )
     parser.add_argument(
+        "--no-zip",
+        action="store_true",
+        help="Do not write the .zip archives next to the package directories. "
+        "The archives are what Springer Nature SNAPP takes as the upload, so "
+        "skip them only when building for a system that wants loose files.",
+    )
+    parser.add_argument(
         "--skip-verify",
         action="store_true",
         help="Skip the mandatory compile-and-check step. Debugging only - "
@@ -967,6 +1004,15 @@ def main(argv: list[str] | None = None) -> int:
     except SubmissionBuildError as exc:
         print(f"[make_submission] FAILED: {exc}", file=sys.stderr)
         return 1
+
+    if not args.no_zip:
+        journal_dir = args.output_root / args.journal
+        try:
+            for label in verified:
+                write_package_zip(journal_dir / SPECS_BY_KEY[label].output_subdir_name)
+        except SubmissionBuildError as exc:
+            print(f"[make_submission] FAILED: {exc}", file=sys.stderr)
+            return 1
 
     print("[make_submission] Done.")
     for label, verification in verified.items():

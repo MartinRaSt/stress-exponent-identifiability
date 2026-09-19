@@ -70,8 +70,12 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
+
+import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MAIN_TEX = PROJECT_ROOT / "clanek_en" / "dami" / "main_dami.tex"
@@ -318,13 +322,21 @@ def _plain(text: str, macros: dict[str, str], label: str, warnings: list[str]) -
 # Front-matter extraction
 # --------------------------------------------------------------------------
 
+# The front matter carries the ORCIDs inside \equalcont (the class's own
+# \orcid macro needs Orcidlogo.eps, which MiKTeX does not ship, and its
+# absence pushes the title block onto page two). They are therefore read
+# from that note, in author order.
+# The front matter carries the ORCIDs inside the equal-contribution note:
+# the class's own orcid macro needs Orcidlogo.eps, which MiKTeX does not
+# ship, and its absence pushes the title block onto page two.
 _AUTHOR_RE = re.compile(
     r"\\author(\*?)\[[^\]]*\]\{\\fnm\{([^{}]*)\}\s*\\sur\{([^{}]*)\}\}\s*"
     r"\\email\{([^{}]*)\}\s*"
-    r"\\equalcont\{([^{}]*)\}\s*"
-    r"%%\s*ORCID\s+(\S+)"
+    r"\\equalcont\{(.*?)\}\s*$",
+    re.MULTILINE,
 )
 
+_ORCID_RE = re.compile(r"ORCID[^:]*:[^0-9]*(\d{4}-\d{4}-\d{4}-\d{3}[\dX])")
 
 class Author:
     def __init__(self, corresponding: bool, given: str, family: str, email: str,
@@ -345,9 +357,18 @@ def extract_authors(tex: str) -> list[Author]:
     matches = list(_AUTHOR_RE.finditer(tex))
     if not matches:
         raise SubmissionGuideError(
-            "No \\author{...}\\email{...}\\equalcont{...}%% ORCID ... block "
-            "found in the manuscript source - the front-matter layout may "
-            "have changed; update _AUTHOR_RE."
+            "No \\author{...}\\email{...}\\equalcont{...} block found in the "
+            "manuscript source - the front-matter layout may have changed; "
+            "update _AUTHOR_RE."
+        )
+    # One ORCID per author, in the order the authors are declared; the note
+    # is repeated for every author, so the identifiers are read once.
+    orcids = _ORCID_RE.findall(matches[0].group(5))
+    if len(orcids) != len(matches):
+        raise SubmissionGuideError(
+            f"Found {len(matches)} author(s) but {len(orcids)} ORCID(s) in "
+            "the equal-contribution note; every author needs one (the "
+            "journal asks for it in the submission form)."
         )
     return [
         Author(
@@ -356,9 +377,9 @@ def extract_authors(tex: str) -> list[Author]:
             family=m.group(3),
             email=m.group(4),
             equal_contribution_note=m.group(5),
-            orcid=m.group(6),
+            orcid=orcid,
         )
-        for m in matches
+        for m, orcid in zip(matches, orcids)
     ]
 
 
@@ -605,11 +626,40 @@ def build_form_texts_markdown(
     return "\n".join(lines), warnings
 
 
+# Fields every reviewer entry must carry; a missing one is an error rather
+# than a silently incomplete cover letter (the journal requires an
+# institutional e-mail or another way to verify the person's identity).
+_REVIEWER_FIELDS = ("name", "affiliation", "email", "orcid", "reason")
+
+
+def load_reviewers(path: Path) -> list[dict[str, str]]:
+    """Reads the suggested reviewers from reviewers.yaml. The file is the
+    single machine-readable source; 04_NAVRZENI_RECENZENTI.md documents where
+    each entry was verified."""
+    if not path.is_file():
+        raise SubmissionGuideError(
+            f"Suggested reviewers file not found: {path}. It is the source of "
+            "the reviewer paragraph in the cover letter."
+        )
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    entries = data.get("reviewers")
+    if not entries:
+        raise SubmissionGuideError(f"No 'reviewers' entries in {path}.")
+    for i, entry in enumerate(entries, start=1):
+        missing = [f for f in _REVIEWER_FIELDS if not str(entry.get(f, "")).strip()]
+        if missing:
+            raise SubmissionGuideError(
+                f"Reviewer #{i} in {path} is missing: {', '.join(missing)}."
+            )
+    return entries
+
+
 def build_cover_letter_markdown(
     *,
     main_tex_path: Path,
     numbers_tex_path: Path,
     zenodo_doi: str,
+    reviewers_path: Path,
 ) -> tuple[str, list[str]]:
     """Builds the content of 02_COVER_LETTER.md. The connecting prose is a
     static template (author's request: written by the tool's author, not
@@ -618,6 +668,7 @@ def build_cover_letter_markdown(
     pulled from the manuscript or from the mandatory --zenodo-doi argument."""
     tex = main_tex_path.read_text(encoding="utf-8")
     macros = load_number_macros(numbers_tex_path)
+    reviewers = load_reviewers(reviewers_path)
     warnings: list[str] = []
 
     title_raw = _find_and_extract(tex, "title")
@@ -657,7 +708,7 @@ def build_cover_letter_markdown(
 
     timestamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     lines: list[str] = []
-    lines.append("# Cover letter (DAMI, Editorial Manager)")
+    lines.append("# Cover letter (DAMI, Springer Nature SNAPP)")
     lines.append("")
     lines.append(
         f"> AUTOGENEROVANO skriptem `src/tools/make_submission_guide.py` "
@@ -721,10 +772,37 @@ def build_cover_letter_markdown(
     )
     lines.append("")
     lines.append(
+        "For completeness we disclose that the manuscript builds on two "
+        "earlier conference papers by the authors, both cited in the text: "
+        "Network Layout Visualization Based on Sammon's Projection "
+        "(INCoS 2013, doi:10.1109/INCoS.2013.43) and Visualization of "
+        "Social Network Dynamics using Sammon's Projection (CASoN 2013, "
+        "doi:10.1109/CASoN.2013.6622600). Those papers applied Sammon's "
+        "projection to network layout and to network dynamics. The present "
+        "manuscript shares that starting point but is otherwise new work: "
+        "the identifiability result for the stress exponent, the rule that "
+        "sets the exponent from a single input statistic, the GPU solver "
+        "and the empirical study are not part of either conference paper."
+    )
+    lines.append("")
+    lines.append(
         "A statement on the use of AI-assisted tools during the preparation "
         "of this manuscript accompanies this submission (see "
         "dami_submission/03_PROHLASENI_O_AI.md)."
     )
+    lines.append("")
+    lines.append(
+        "We suggest the following reviewers. None of them has co-authored "
+        "with either of us, none is affiliated with our institution, and "
+        "no two of them have co-authored with each other:"
+    )
+    lines.append("")
+    for reviewer in reviewers:
+        lines.append(
+            f"- {reviewer['name']}, {reviewer['affiliation']}; "
+            f"{reviewer['email']}; ORCID {reviewer['orcid']} - "
+            f"{reviewer['reason']}."
+        )
     lines.append("")
     lines.append("On behalf of both authors,")
     lines.append("")
@@ -734,6 +812,127 @@ def build_cover_letter_markdown(
     lines.append("")
 
     return "\n".join(lines), warnings
+
+
+# --------------------------------------------------------------------------
+# Cover letter as PDF (the submission form takes plain text, but a typeset
+# copy is what gets attached or kept on file)
+# --------------------------------------------------------------------------
+
+# The ten characters that must not reach pdflatex unescaped. The backslash is
+# handled first via a placeholder, otherwise it would escape the escapes.
+_TEX_SPECIALS = (
+    ("&", "\\&"),
+    ("%", "\\%"),
+    ("$", "\\$"),
+    ("#", "\\#"),
+    ("_", "\\_"),
+    ("{", "\\{"),
+    ("}", "\\}"),
+    ("~", "\\textasciitilde{}"),
+    ("^", "\\textasciicircum{}"),
+)
+
+
+def _tex_escape(text: str) -> str:
+    """Escapes LaTeX special characters. The letter carries D_ij^(-alpha),
+    e-mail addresses and URLs, so this is not optional. The backslash goes
+    through a placeholder so that the escapes are not escaped again."""
+    placeholder = "@BACKSLASH@"
+    text = text.replace(chr(92), placeholder)
+    for char, replacement in _TEX_SPECIALS:
+        text = text.replace(char, replacement)
+    return text.replace(placeholder, chr(92) + "textbackslash{}")
+
+
+_SIGNOFF_PREFIX = "On behalf of"
+
+
+
+def build_cover_letter_tex(markdown: str) -> str:
+    """Turns the generated cover-letter markdown into a standalone LaTeX
+    letter. The markdown heading and the provenance note above the first
+    '---' separator are dropped: they address the author, not the editor."""
+    separator = chr(10) + "---" + chr(10)
+    _, found, body = markdown.partition(separator)
+    if not found:
+        raise SubmissionGuideError(
+            "Cover letter markdown has no '---' separator; cannot separate "
+            "the provenance note from the letter itself."
+        )
+
+    bs = chr(92)
+    out: list[str] = []
+    bullets: list[str] = []
+    in_signature = False
+
+    def flush_bullets() -> None:
+        if not bullets:
+            return
+        out.append(bs + "begin{itemize}[leftmargin=1.2em,itemsep=2pt,topsep=4pt]")
+        for item in bullets:
+            out.append(bs + "item " + item)
+        out.append(bs + "end{itemize}")
+        bullets.clear()
+
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush_bullets()
+            out.append("")
+            continue
+        if line.startswith("- "):
+            bullets.append(_tex_escape(line[2:]))
+            continue
+        flush_bullets()
+        escaped = _tex_escape(line)
+        if line.startswith(_SIGNOFF_PREFIX):
+            in_signature = True
+        # Name, affiliation and e-mail must break by line, not flow.
+        out.append(escaped + (' ' + bs + bs if in_signature else ''))
+    flush_bullets()
+
+    preamble = [
+        bs + "documentclass[11pt,a4paper]{article}",
+        bs + "usepackage[T1]{fontenc}",
+        bs + "usepackage[utf8]{inputenc}",
+        bs + "usepackage[margin=25mm]{geometry}",
+        bs + "usepackage{enumitem}",
+        bs + "usepackage{parskip}",
+        bs + "pagestyle{empty}",
+        bs + "begin{document}",
+    ]
+    tail = [bs + "end{document}", ""]
+    return chr(10).join(preamble + [""] + out + tail)
+
+
+def compile_cover_letter_pdf(tex_path: Path) -> Path:
+    """Compiles the letter with pdflatex (two passes are unnecessary: no
+    references, no bibliography). Fails loud when pdflatex is missing or the
+    compile does not produce a PDF."""
+    if shutil.which("pdflatex") is None:
+        raise SubmissionGuideError(
+            "pdflatex not found on PATH; cannot build the cover-letter PDF. "
+            "Rerun with --skip-pdf to write only the markdown."
+        )
+    result = subprocess.run(
+        ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", tex_path.name],
+        cwd=tex_path.parent,
+        capture_output=True,
+        text=True,
+    )
+    pdf_path = tex_path.with_suffix(".pdf")
+    if result.returncode != 0 or not pdf_path.is_file():
+        log_path = tex_path.with_suffix(".log")
+        raise SubmissionGuideError(
+            f"pdflatex failed for {tex_path.name} (exit {result.returncode}); "
+            f"see {log_path}."
+        )
+    for suffix in (".aux", ".log", ".out"):
+        by_product = tex_path.with_suffix(suffix)
+        if by_product.is_file():
+            by_product.unlink()
+    return pdf_path
 
 
 # --------------------------------------------------------------------------
@@ -749,6 +948,11 @@ def main(argv: list[str] | None = None) -> int:
         "zenodo_doi",
         help="DOI of the Zenodo results archive, e.g. 10.5281/zenodo.1234567 "
         "(mandatory - the cover letter must not ship with a placeholder).",
+    )
+    parser.add_argument(
+        "--skip-pdf",
+        action="store_true",
+        help="Write only the markdown files; do not typeset the cover-letter PDF (use when pdflatex is not available).",
     )
     parser.add_argument(
         "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
@@ -782,6 +986,7 @@ def main(argv: list[str] | None = None) -> int:
             main_tex_path=args.main_tex,
             numbers_tex_path=args.numbers_tex,
             zenodo_doi=args.zenodo_doi,
+            reviewers_path=args.output_dir / "reviewers.yaml",
         )
     except SubmissionGuideError as exc:
         print(f"[make_submission_guide] FAILED: {exc}", file=sys.stderr)
@@ -795,6 +1000,19 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[make_submission_guide] Wrote {form_path}")
     print(f"[make_submission_guide] Wrote {letter_path}")
+
+    if not args.skip_pdf:
+        letter_tex_path = args.output_dir / "02_COVER_LETTER.tex"
+        letter_tex_path.write_text(
+            build_cover_letter_tex(cover_letter), encoding="utf-8"
+        )
+        try:
+            letter_pdf_path = compile_cover_letter_pdf(letter_tex_path)
+        except SubmissionGuideError as exc:
+            print(f"[make_submission_guide] FAILED: {exc}", file=sys.stderr)
+            return 1
+        print(f"[make_submission_guide] Wrote {letter_tex_path}")
+        print(f"[make_submission_guide] Wrote {letter_pdf_path}")
 
     all_warnings = form_warnings + letter_warnings
     if all_warnings:

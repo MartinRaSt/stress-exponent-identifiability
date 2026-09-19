@@ -398,3 +398,41 @@ def test_journal_stamp_lists_the_upload_map(tmp_path: Path) -> None:
         assert path_in_package in stamp
         assert slot in stamp
     assert "NOT VERIFIED" in stamp
+
+
+# --------------------------------------------------------------------------
+# SNAPP archives
+# --------------------------------------------------------------------------
+
+
+def test_zip_is_flat_and_skips_existing_archives(tmp_path: Path) -> None:
+    """Springer Nature SNAPP compiles the uploaded archive, so the main .tex
+    has to sit at the archive root, and an archive from an earlier run must
+    not end up inside the new one."""
+    import zipfile
+
+    package = tmp_path / "manuscript_en"
+    package.mkdir()
+    (package / "main_dami.tex").write_text("x", encoding="utf-8")
+    (package / "fig1.pdf").write_bytes(b"%PDF-1.4")
+    (package / "manuscript_en.zip").write_bytes(b"stale archive")
+
+    zip_path = ms.write_package_zip(package)
+
+    assert zip_path == tmp_path / "manuscript_en.zip"
+    with zipfile.ZipFile(zip_path) as archive:
+        names = sorted(archive.namelist())
+    assert names == ["fig1.pdf", "main_dami.tex"]
+    assert all("/" not in name for name in names)
+
+
+def test_zip_of_missing_directory_fails_loud(tmp_path: Path) -> None:
+    with pytest.raises(ms.SubmissionBuildError, match="does not exist"):
+        ms.write_package_zip(tmp_path / "not_built_yet")
+
+
+def test_zip_of_empty_directory_fails_loud(tmp_path: Path) -> None:
+    package = tmp_path / "manuscript_en"
+    package.mkdir()
+    with pytest.raises(ms.SubmissionBuildError, match="no files"):
+        ms.write_package_zip(package)
