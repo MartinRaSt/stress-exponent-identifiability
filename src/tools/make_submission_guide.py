@@ -8,13 +8,13 @@
 # Created: 2026-09-18
 # License: see the LICENSE file in the repository root
 """
-Generates the two DAMI Editorial Manager submission texts, ON REQUEST ONLY
+Generates the two DAMI submission texts (Springer Nature SNAPP), ON REQUEST ONLY
 (the author explicitly asked that this NOT run automatically before the
 manuscript is final and the Zenodo DOI exists - see dami_submission/
 00_POSTUP_SUBMISSION.md):
 
   dami_submission/01_TEXTY_DO_FORMULARE.md
-      Every text field the author copy-pastes into the Editorial Manager web
+      Every text field the author copy-pastes into the SNAPP submission web
       form (title, abstract, keywords, authors, affiliation, funding,
       declarations), as PLAIN TEXT ready to paste - no LaTeX markup, no
       unresolved macros.
@@ -524,7 +524,7 @@ def build_form_texts_markdown(
 
     timestamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     lines: list[str] = []
-    lines.append("# Texty do formulare Editorial Manager (DAMI)")
+    lines.append("# Texty do formulare SNAPP (DAMI)")
     lines.append("")
     lines.append(
         f"> AUTOGENEROVANO skriptem `src/tools/make_submission_guide.py` "
